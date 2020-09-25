@@ -166,7 +166,6 @@ int main(int, char **)
       shader.set_uniform("b", right_up[0], right_up[1]);
       shader.set_uniform("ITERATIONS", ITERATIONS);
       shader.set_uniform("INF", INF);
-      shader.set_uniform("tex", 0);
 
       // Bind triangle shader
       shader.use();
@@ -180,7 +179,7 @@ int main(int, char **)
       GLuint tex;
       glGenTextures(1, &tex);
       glBindTexture(GL_TEXTURE_1D, tex);
-       glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+      glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
       glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
       glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
       float pixels[] = {

@@ -31,5 +31,5 @@ void main()
         }
     }
 
-    o_frag_color = texture(tex, 3.0 * out_iteration / ITERATIONS).rgba;
+    o_frag_color = texture(tex, 1.0 * out_iteration / ITERATIONS).rgba;
 }
