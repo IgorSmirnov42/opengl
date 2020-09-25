@@ -171,9 +171,6 @@ int main(int, char **)
       shader.use();
       // Bind vertex array = buffers + indices
       glBindVertexArray(vao);
-      // Execute draw call
-      glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
-      glBindVertexArray(0);
 
       glActiveTexture(GL_TEXTURE0);
       GLuint tex;
@@ -198,6 +195,10 @@ int main(int, char **)
                GL_RGBA,
                GL_FLOAT,
                pixels);
+
+      glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+      glBindTexture(GL_TEXTURE_1D, 0);
+      glBindVertexArray(0);
 
       // Generate gui render commands
       ImGui::Render();
