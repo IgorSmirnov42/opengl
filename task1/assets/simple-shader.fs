@@ -4,6 +4,7 @@ out vec4 o_frag_color;
 
 uniform vec2 a;
 uniform vec2 b;
+uniform vec2 window_size;
 uniform int ITERATIONS;
 uniform float INF;
 uniform sampler1D tex;
@@ -12,8 +13,8 @@ void main()
 {
     float total_width = b.x - a.x;
     float total_height = b.y - a.y;
-    float c_x = a.x + (gl_PointCoord.x + 1) / 2 * total_width;
-    float c_y = b.y - (gl_PointCoord.y + 1) / 2 * total_height;
+    float c_x = a.x + gl_FragCoord.x / window_size.x * total_width;
+    float c_y = b.y - gl_FragCoord.y / window_size.y * total_height;
     float z_x = c_x;
     float z_y = c_y;
     int out_iteration = ITERATIONS;

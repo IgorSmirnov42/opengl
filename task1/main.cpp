@@ -129,7 +129,7 @@ int main(int, char **)
       ImGui::Begin("Settings");
       static float INF = 50.0;
       ImGui::SliderFloat("INF", &INF, 0, 100.0);
-      static int ITERATIONS = 230;
+      static int ITERATIONS = 80;
       ImGui::SliderInt("Iterations", &ITERATIONS, 0, 600);
       ImVec2 delta = ImGui::GetMouseDragDelta();
       ImGui::ResetMouseDragDelta();
@@ -164,6 +164,7 @@ int main(int, char **)
       // Pass the parameters to the shader as uniforms
       shader.set_uniform("a", left_bottom[0], left_bottom[1]);
       shader.set_uniform("b", right_up[0], right_up[1]);
+      shader.set_uniform("window_size", (float) width, (float) height);
       shader.set_uniform("ITERATIONS", ITERATIONS);
       shader.set_uniform("INF", INF);
 
