@@ -8,11 +8,14 @@
 
 // Imgui + bindings
 #include "imgui.h"
+
+#define STB_IMAGE_IMPLEMENTATION
+#include "libs/stb_image.h"
 #include "bindings/imgui_impl_glfw.h"
 #include "bindings/imgui_impl_opengl3.h"
 
-#include "tiny_obj_loader.h"
 #define TINYOBJLOADER_IMPLEMENTATION
+#include "tiny_obj_loader.h"
 
 // Include glfw3.h after our OpenGL definitions
 #include <GLFW/glfw3.h>
@@ -28,39 +31,105 @@ static void glfw_error_callback(int error, const char *description)
    std::cerr << fmt::format("Glfw Error {}: {}\n", error, description);
 }
 
-void create_rectangle(GLuint &vbo, GLuint &vao, GLuint &ebo)
+void create_cubemap(GLuint &vbo, GLuint &vao)
 {
-   // create the rectangle
-   float vertices[] = {
-       -1.0f, -1.0f, 0.0f,	// position vertex 1
-       1.0f, 0.0f, 0.0f,	 // color vertex 1
+    float vertices[] = {
+        -1.0f,  1.0f, -1.0f,
+        -1.0f, -1.0f, -1.0f,
+        1.0f, -1.0f, -1.0f,
+        1.0f, -1.0f, -1.0f,
+        1.0f,  1.0f, -1.0f,
+        -1.0f,  1.0f, -1.0f,
 
-       -1.0f, 1.0f, 0.0f,  // position vertex 1
-       0.0f, 1.0f, 0.0f,	 // color vertex 1
+        -1.0f, -1.0f,  1.0f,
+        -1.0f, -1.0f, -1.0f,
+        -1.0f,  1.0f, -1.0f,
+        -1.0f,  1.0f, -1.0f,
+        -1.0f,  1.0f,  1.0f,
+        -1.0f, -1.0f,  1.0f,
 
-       1.0f, -1.0f, 0.0f, // position vertex 1
-       0.0f, 0.0f, 1.0f,	 // color vertex 1
+        1.0f, -1.0f, -1.0f,
+        1.0f, -1.0f,  1.0f,
+        1.0f,  1.0f,  1.0f,
+        1.0f,  1.0f,  1.0f,
+        1.0f,  1.0f, -1.0f,
+        1.0f, -1.0f, -1.0f,
 
-       1.0f, 1.0f, 0.0f,
-       1.0f, 0.0f, 0.0f
-   };
-   unsigned int triangle_indices[] = {
-       3, 2, 1,
-       2, 1, 0
-   };
-   glGenVertexArrays(1, &vao);
-   glGenBuffers(1, &vbo);
-   glGenBuffers(1, &ebo);
-   glBindVertexArray(vao);
-   glBindBuffer(GL_ARRAY_BUFFER, vbo);
-   glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
-   glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(triangle_indices), triangle_indices, GL_STATIC_DRAW);
-   glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void *)0);
-   glEnableVertexAttribArray(0);
-   glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void *)(3 * sizeof(float)));
-   glEnableVertexAttribArray(1);
-   glBindBuffer(GL_ARRAY_BUFFER, 0);
+        -1.0f, -1.0f,  1.0f,
+        -1.0f,  1.0f,  1.0f,
+        1.0f,  1.0f,  1.0f,
+        1.0f,  1.0f,  1.0f,
+        1.0f, -1.0f,  1.0f,
+        -1.0f, -1.0f,  1.0f,
+
+        -1.0f,  1.0f, -1.0f,
+        1.0f,  1.0f, -1.0f,
+        1.0f,  1.0f,  1.0f,
+        1.0f,  1.0f,  1.0f,
+        -1.0f,  1.0f,  1.0f,
+        -1.0f,  1.0f, -1.0f,
+
+        -1.0f, -1.0f, -1.0f,
+        -1.0f, -1.0f,  1.0f,
+        1.0f, -1.0f, -1.0f,
+        1.0f, -1.0f, -1.0f,
+        -1.0f, -1.0f,  1.0f,
+        1.0f, -1.0f,  1.0f
+    };
+    glGenVertexArrays(1, &vao);
+    glGenBuffers(1, &vbo);
+    glBindVertexArray(vao);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), &vertices, GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), nullptr);
+}
+
+unsigned int load_cubemap(const std::string &path)
+{
+    unsigned int textureID;
+    glGenTextures(1, &textureID);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, textureID);
+
+    int width, height, nrChannels;
+    {
+        unsigned char *posx = stbi_load((path + "/posx.jpg").c_str(), &width, &height, &nrChannels, 0);
+        assert(posx);
+        glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, posx);
+        stbi_image_free(posx);
+    }
+    {
+        unsigned char *negx = stbi_load((path + "/negx.jpg").c_str(), &width, &height, &nrChannels, 0);
+        glTexImage2D(GL_TEXTURE_CUBE_MAP_NEGATIVE_X, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, negx);
+        stbi_image_free(negx);
+    }
+    {
+        unsigned char *posy = stbi_load((path + "/posy.jpg").c_str(), &width, &height, &nrChannels, 0);
+        glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_Y, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, posy);
+        stbi_image_free(posy);
+    }
+    {
+        unsigned char *negy = stbi_load((path + "/negy.jpg").c_str(), &width, &height, &nrChannels, 0);
+        glTexImage2D(GL_TEXTURE_CUBE_MAP_NEGATIVE_Y, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, negy);
+        stbi_image_free(negy);
+    }
+    {
+        unsigned char *posz = stbi_load((path + "/posz.jpg").c_str(), &width, &height, &nrChannels, 0);
+        glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_Z, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, posz);
+        stbi_image_free(posz);
+    }
+    {
+        unsigned char *negz = stbi_load((path + "/negz.jpg").c_str(), &width, &height, &nrChannels, 0);
+        glTexImage2D(GL_TEXTURE_CUBE_MAP_NEGATIVE_Z, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, negz);
+        stbi_image_free(negz);
+    }
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+
+    return textureID;
 }
 
 int main(int, char **)
@@ -94,11 +163,11 @@ int main(int, char **)
    }
 
    // create our geometries
-   GLuint vbo, vao, ebo;
-   create_rectangle(vbo, vao, ebo);
+   GLuint cubemapVBO, cubemapVAO;
+   create_cubemap(cubemapVBO, cubemapVAO);
 
    // init shader
-   shader_t shader("simple-shader.vs", "simple-shader.fs");
+   shader_t cubemapShader("cubemap-shader.vs", "cubemap-shader.fs");
 
    // Setup GUI context
    IMGUI_CHECKVERSION();
@@ -107,6 +176,8 @@ int main(int, char **)
    ImGui_ImplGlfw_InitForOpenGL(window, true);
    ImGui_ImplOpenGL3_Init(glsl_version);
    ImGui::StyleColorsDark();
+
+   unsigned int cubemapTexture = load_cubemap("../Yokohama3");
 
    while (!glfwWindowShouldClose(window))
    {
@@ -130,78 +201,16 @@ int main(int, char **)
 
       // GUI
       ImGui::Begin("Settings");
-      static float INF = 50.0;
-      ImGui::SliderFloat("INF", &INF, 0, 100.0);
-      static int ITERATIONS = 230;
-      ImGui::SliderInt("Iterations", &ITERATIONS, 0, 600);
-      ImVec2 delta = ImGui::GetMouseDragDelta();
-      ImGui::ResetMouseDragDelta();
-      static float left_bottom[2] = { -2.0f, -2.0f};
-      static float right_up[2] = { 2.0f, 2.0f};
-      int height, width;
-      glfwGetWindowSize(window, &width, &height);
-      float scale_x = (right_up[0] - left_bottom[0]) / (float) width;
-      left_bottom[0] -= delta.x * scale_x;
-      right_up[0] -= delta.x * scale_x;
-      float scale_y = (right_up[1] - left_bottom[1]) / (float) height;
-      left_bottom[1] -= delta.y * scale_y;
-      right_up[1] -= delta.y * scale_y;
-
-      float mouse_wheel = ImGui::GetIO().MouseWheel;
-      ImVec2 screen_pos = ImGui::GetMousePos();
-      if (fabs(mouse_wheel) > 1e-5) {
-          float const_x = left_bottom[0] + (right_up[0] - left_bottom[0]) * (float) screen_pos.x / width;
-          float const_y = left_bottom[1] + (right_up[1] - left_bottom[1]) * (float) screen_pos.y / height;
-          //std::cerr << screen_pos.x << ' ' << screen_pos.y << std::endl;
-          static const float times_per_one = 1.1;
-          float times_change = pow(times_per_one, -mouse_wheel);
-          float new_width = (right_up[0] - left_bottom[0]) * times_change;
-          left_bottom[0] = const_x - new_width * (const_x - left_bottom[0]) / (right_up[0] - left_bottom[0]);
-          right_up[0] = left_bottom[0] + new_width;
-          float new_height = (right_up[1] - left_bottom[1]) * times_change;
-          left_bottom[1] = const_y - new_height * (const_y - left_bottom[1]) / (right_up[1] - left_bottom[1]);
-          right_up[1] = left_bottom[1] + new_height;
-      }
       ImGui::End();
 
-      // Pass the parameters to the shader as uniforms
-      shader.set_uniform("a", left_bottom[0], left_bottom[1]);
-      shader.set_uniform("b", right_up[0], right_up[1]);
-      shader.set_uniform("ITERATIONS", ITERATIONS);
-      shader.set_uniform("INF", INF);
-      shader.set_uniform("tex", 0);
-
-      // Bind triangle shader
-      shader.use();
-      // Bind vertex array = buffers + indices
-      glBindVertexArray(vao);
-      // Execute draw call
-      glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
-      glBindVertexArray(0);
-
+      // Cubemap render
+      glDepthMask(GL_FALSE);
+      cubemapShader.use();
+      glBindVertexArray(cubemapVAO);
       glActiveTexture(GL_TEXTURE0);
-      GLuint tex;
-      glGenTextures(1, &tex);
-      glBindTexture(GL_TEXTURE_1D, tex);
-       glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-      glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-      glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-      float pixels[] = {
-               0.0f, 0.0f, 0.2f, 1.0f,
-               0.7f, 0.7f, 0.0f, 1.0f,
-               0.7f, 0.5f, 0.0f, 1.0f,
-               0.8f, 0.2f, 0.0f, 1.0f,
-               0.0f, 0.0f, 0.0f, 1.0f
-      };
-      glTexImage1D(
-               GL_TEXTURE_1D,
-               0,
-               GL_RGBA32F,
-               5,
-               0,
-               GL_RGBA,
-               GL_FLOAT,
-               pixels);
+      glBindTexture(GL_TEXTURE_CUBE_MAP, cubemapTexture);
+      glDrawArrays(GL_TRIANGLES, 0, 36);
+      glBindVertexArray(0);
 
       // Generate gui render commands
       ImGui::Render();
