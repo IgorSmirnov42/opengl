@@ -1,0 +1,50 @@
+{
+ "options": [
+  [
+   "fmt:header_only",
+   "True"
+  ],
+  [
+   "fmt:with_fmt_alias",
+   "False"
+  ],
+  [
+   "glew:fPIC",
+   "True"
+  ],
+  [
+   "glew:shared",
+   "False"
+  ],
+  [
+   "glfw:fPIC",
+   "True"
+  ],
+  [
+   "glfw:shared",
+   "False"
+  ],
+  [
+   "imgui:fPIC",
+   "True"
+  ],
+  [
+   "imgui:shared",
+   "False"
+  ],
+  [
+   "tinyobjloader:fPIC",
+   "True"
+  ],
+  [
+   "tinyobjloader:shared",
+   "False"
+  ]
+ ],
+ "root": {
+  "name": null,
+  "version": null,
+  "user": null,
+  "channel": null
+ }
+}
