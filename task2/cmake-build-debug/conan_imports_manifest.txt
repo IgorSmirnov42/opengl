@@ -1,5 +1,0 @@
-1601797573
-/home/smirnov-i/SPbAU/opengl/task2/bindings/imgui_impl_glfw.cpp: 3a3ff34d84b1070e285d904356fdd9d3
-/home/smirnov-i/SPbAU/opengl/task2/bindings/imgui_impl_glfw.h: 48b76b4facf22a9fa29ed589229986a2
-/home/smirnov-i/SPbAU/opengl/task2/bindings/imgui_impl_opengl3.cpp: 4f8f8a33537c38949433066de59fe2d7
-/home/smirnov-i/SPbAU/opengl/task2/bindings/imgui_impl_opengl3.h: a7593c74094cfce3ff09cda0650c2dc6

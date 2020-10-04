@@ -1,3 +1,0 @@
-/home/smirnov-i/SPbAU/opengl/task2/cmake-build-debug/CMakeFiles/rebuild_cache.dir
-/home/smirnov-i/SPbAU/opengl/task2/cmake-build-debug/CMakeFiles/edit_cache.dir
-/home/smirnov-i/SPbAU/opengl/task2/cmake-build-debug/CMakeFiles/3Dobj.dir

@@ -1,1 +1,0 @@
-/usr/bin/c++  -g  -rdynamic CMakeFiles/3Dobj.dir/main.cpp.o CMakeFiles/3Dobj.dir/opengl_shader.cpp.o CMakeFiles/3Dobj.dir/bindings/imgui_impl_glfw.cpp.o CMakeFiles/3Dobj.dir/bindings/imgui_impl_opengl3.cpp.o  -o 3Dobj 
