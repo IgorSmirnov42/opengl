@@ -33,12 +33,16 @@ add_executable( 3Dobj
                 bindings/imgui_impl_glfw.h
                 bindings/imgui_impl_opengl3.h
                 assets/cubemap-shader.vs
-                assets/cubemap-shader.fs)
+                assets/cubemap-shader.fs
+                assets/object-shader.vs
+                assets/object-shader.fs)
 
 add_custom_command(TARGET 3Dobj
     POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy ${PROJECT_SOURCE_DIR}/assets/cubemap-shader.vs ${PROJECT_BINARY_DIR}
     COMMAND ${CMAKE_COMMAND} -E copy ${PROJECT_SOURCE_DIR}/assets/cubemap-shader.fs ${PROJECT_BINARY_DIR}
+    COMMAND ${CMAKE_COMMAND} -E copy ${PROJECT_SOURCE_DIR}/assets/object-shader.vs ${PROJECT_BINARY_DIR}
+    COMMAND ${CMAKE_COMMAND} -E copy ${PROJECT_SOURCE_DIR}/assets/object-shader.fs ${PROJECT_BINARY_DIR}
 )
 
 target_compile_definitions(3Dobj PUBLIC IMGUI_IMPL_OPENGL_LOADER_GLEW)
