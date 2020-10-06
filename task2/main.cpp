@@ -178,22 +178,14 @@ std::vector<float> load_object(const std::string &path, GLuint &vbo, GLuint &vao
                 tinyobj::real_t nx = attrib.normals[3*idx.normal_index+0];
                 tinyobj::real_t ny = attrib.normals[3*idx.normal_index+1];
                 tinyobj::real_t nz = attrib.normals[3*idx.normal_index+2];
-                vertices.push_back(-nx);
-                vertices.push_back(-ny);
-                vertices.push_back(-nz);
-
-                // Optional: vertex colors
-                // tinyobj::real_t red = attrib.colors[3*idx.vertex_index+0];
-                // tinyobj::real_t green = attrib.colors[3*idx.vertex_index+1];
-                // tinyobj::real_t blue = attrib.colors[3*idx.vertex_index+2];
+                vertices.push_back(nx);
+                vertices.push_back(ny);
+                vertices.push_back(nz);
             }
             index_offset += fv;
             for (int i = 0; i < 3; ++i) {
                 triangles.push_back(triangles.size());
             }
-
-            // per-face material
-            shapes[s].mesh.material_ids[f];
         }
     }
 
@@ -285,6 +277,7 @@ int main(int, char **)
    // init shader
    shader_t cubemapShader("cubemap-shader.vs", "cubemap-shader.fs");
    shader_t objectShader("object-shader.vs", "object-shader.fs");
+   shader_t objectPreshader("object-preshader.vs", "object-preshader.fs");
 
    // Setup GUI context
    IMGUI_CHECKVERSION();
@@ -294,7 +287,7 @@ int main(int, char **)
    ImGui_ImplOpenGL3_Init(glsl_version);
    ImGui::StyleColorsDark();
 
-   unsigned int cubemapTexture = load_cubemap("../Yokohama3");
+   unsigned int cubemapTexture = load_cubemap("../Teide");
 
    float x_rotation = 0.0;
    float y_rotation = 0.0;
@@ -350,8 +343,9 @@ int main(int, char **)
               glm::vec3(0, 0, 0),
               glm::vec3(rotated * glm::vec4(0, 1 , 0, 1))
               );
-      auto projection = glm::perspective<float>(45, float(display_w) / float(display_h), 0.1, 100);
+      auto projection = glm::perspective<float>(45, float(display_w) / float(display_h), 0.001, 100);
       auto vp = projection * objectView;
+      auto objectMVP = vp * objectModel;
 
 //      for (int i = 0; i < vertices.size(); i += 6) {
 //          auto point = glm::vec4(vertices[i], vertices[i + 1], vertices[i + 2], 1.0);
@@ -361,11 +355,18 @@ int main(int, char **)
 
       //std::cerr << cameraPos.x << ' ' << cameraPos.y << ' ' << cameraPos.z << std::endl;
 
+      objectPreshader.use();
+      objectPreshader.set_uniform("mvp", glm::value_ptr(objectMVP));
+      glBindVertexArray(objectVAO);
+      glDrawArrays(GL_TRIANGLES, 0, triangles_number * 3);
+      glBindVertexArray(0);
+
+      glDepthFunc(GL_LEQUAL);
       objectShader.use();
       objectShader.set_uniform("model", glm::value_ptr(objectModel));
       objectShader.set_uniform("vp", glm::value_ptr(vp));
       objectShader.set_uniform("cf", ratio);
-      objectShader.set_uniform("cameraPos", glm::value_ptr(cameraPos));
+      objectShader.set_uniform("cameraPos", cameraPos.x, cameraPos.y, cameraPos.z);
       glBindVertexArray(objectVAO);
       glActiveTexture(GL_TEXTURE0);
       glBindTexture(GL_TEXTURE_CUBE_MAP, cubemapTexture);
@@ -376,7 +377,6 @@ int main(int, char **)
       auto cubemapVP = projection * cubemapView;
 
       // Cubemap render
-      glDepthFunc(GL_LEQUAL);
       cubemapShader.use();
       cubemapShader.set_uniform("vp", glm::value_ptr(cubemapVP));
       glBindVertexArray(cubemapVAO);

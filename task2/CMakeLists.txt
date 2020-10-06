@@ -35,7 +35,9 @@ add_executable( 3Dobj
                 assets/cubemap-shader.vs
                 assets/cubemap-shader.fs
                 assets/object-shader.vs
-                assets/object-shader.fs)
+                assets/object-shader.fs
+                assets/object-preshader.vs
+                assets/object-preshader.fs)
 
 add_custom_command(TARGET 3Dobj
     POST_BUILD
@@ -43,6 +45,8 @@ add_custom_command(TARGET 3Dobj
     COMMAND ${CMAKE_COMMAND} -E copy ${PROJECT_SOURCE_DIR}/assets/cubemap-shader.fs ${PROJECT_BINARY_DIR}
     COMMAND ${CMAKE_COMMAND} -E copy ${PROJECT_SOURCE_DIR}/assets/object-shader.vs ${PROJECT_BINARY_DIR}
     COMMAND ${CMAKE_COMMAND} -E copy ${PROJECT_SOURCE_DIR}/assets/object-shader.fs ${PROJECT_BINARY_DIR}
+    COMMAND ${CMAKE_COMMAND} -E copy ${PROJECT_SOURCE_DIR}/assets/object-preshader.vs ${PROJECT_BINARY_DIR}
+    COMMAND ${CMAKE_COMMAND} -E copy ${PROJECT_SOURCE_DIR}/assets/object-preshader.fs ${PROJECT_BINARY_DIR}
 )
 
 target_compile_definitions(3Dobj PUBLIC IMGUI_IMPL_OPENGL_LOADER_GLEW)
