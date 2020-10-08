@@ -205,7 +205,7 @@ std::vector<float> load_object(const std::string &path, GLuint &vbo, GLuint &vao
         max_z = std::max(max_z, vertices[i + 2]);
     }
 
-    float div_cf = std::max({max_x - min_x, max_y - min_y, max_z - min_z}) * 10;
+    float div_cf = std::max({max_x - min_x, max_y - min_y, max_z - min_z}) * 3;
     for (int i = 0; i < vertices.size(); i += 6) {
         vertices[i + 0] -= (max_x + min_x) / 2;
         vertices[i + 1] -= (max_y + min_y) / 2;
@@ -287,7 +287,7 @@ int main(int, char **)
    ImGui_ImplOpenGL3_Init(glsl_version);
    ImGui::StyleColorsDark();
 
-   unsigned int cubemapTexture = load_cubemap("../Teide");
+   unsigned int cubemapTexture = load_cubemap("../Yokohama3");
 
    float x_rotation = 0.0;
    float y_rotation = 0.0;
