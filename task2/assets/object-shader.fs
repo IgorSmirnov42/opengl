@@ -24,5 +24,5 @@ void main()
     float r_perp = r_perp_sqrt * r_perp_sqrt;
     float r_parr = r_parr_sqrt * r_parr_sqrt;
     float cfr = (r_perp + r_parr) / 2;
-    gl_FragColor = vec4(res_r.rgb * cfr + res_t.rgb * (1 - cfr), 1.0);
+    gl_FragColor = vec4(res_r.rgb * (1 - cfr) + res_t.rgb * cfr, 1.0);
 }

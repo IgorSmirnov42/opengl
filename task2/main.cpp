@@ -272,7 +272,7 @@ int main(int, char **)
    create_cubemap(cubemapVBO, cubemapVAO);
    GLuint objectVBO, objectVAO, objectEBO;
    unsigned int triangles_number;
-   auto vertices = load_object("../obj/alfa147.obj", objectVBO, objectVAO, objectEBO, triangles_number);
+   auto vertices = load_object("../obj/f1_high.obj", objectVBO, objectVAO, objectEBO, triangles_number);
 
    // init shader
    shader_t cubemapShader("cubemap-shader.vs", "cubemap-shader.fs");
