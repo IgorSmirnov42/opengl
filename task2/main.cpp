@@ -295,6 +295,8 @@ int main(int, char **)
 
    glEnable(GL_DEPTH_TEST);
 
+   auto current_rotation = glm::mat4(1.0);
+
    while (!glfwWindowShouldClose(window))
    {
       glfwPollEvents();
@@ -324,8 +326,8 @@ int main(int, char **)
       ImVec2 delta = ImGui::GetMouseDragDelta();
       ImGui::ResetMouseDragDelta();
 
-      y_rotation += delta.x / 50.0;
-      x_rotation += delta.y / 50.0;
+      y_rotation = -delta.x / 40.0;
+      x_rotation = delta.y / 40.0;
       float mouse_wheel = io.MouseWheel;
       scale /= pow(1.01, mouse_wheel);
       if (scale > 45 || scale <= 0) {
@@ -333,9 +335,14 @@ int main(int, char **)
       }
       ImGui::End();
 
-      auto rotationX = glm::rotate(glm::mat4(1.0f), glm::radians(x_rotation * 60), glm::vec3(1, 0, 0));
-      auto rotated = glm::rotate(rotationX, glm::radians(y_rotation * 60), glm::vec3(0, 1, 0));
+
+      auto rotationX = glm::rotate(glm::mat4(1.0), glm::radians(x_rotation * 60), glm::vec3(1, 0, 0));
+      auto rotationY = glm::rotate(glm::mat4(1.0), glm::radians(y_rotation * 60), glm::vec3(0, 1, 0));
+      auto rotated = current_rotation * rotationX * rotationY;
+
+      current_rotation = rotated;
       auto rotatedAndScaled = glm::scale(rotated, glm::vec3(scale));
+
       auto cameraPos = glm::vec3(rotatedAndScaled * glm::vec4(0, 0 , -1, 1));
       auto objectModel = glm::mat4(1.0f);
       auto objectView = glm::lookAt<float>(
