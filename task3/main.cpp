@@ -181,6 +181,10 @@ std::vector<float> load_object(const std::string &path, GLuint &vbo, GLuint &vao
                 vertices.push_back(nx);
                 vertices.push_back(ny);
                 vertices.push_back(nz);
+                tinyobj::real_t tx = attrib.texcoords[2*idx.texcoord_index+0];
+                tinyobj::real_t ty = attrib.texcoords[2*idx.texcoord_index+1];
+                vertices.push_back(tx);
+                vertices.push_back(ty);
             }
             index_offset += fv;
             for (int i = 0; i < 3; ++i) {
@@ -196,7 +200,7 @@ std::vector<float> load_object(const std::string &path, GLuint &vbo, GLuint &vao
     float min_z = 1e9;
     float max_z = -1e9;
 
-    for (int i = 0; i < vertices.size(); i += 6) {
+    for (int i = 0; i < vertices.size(); i += 8) {
         min_x = std::min(min_x, vertices[i + 0]);
         max_x = std::max(max_x, vertices[i + 0]);
         min_y = std::min(min_y, vertices[i + 1]);
@@ -206,7 +210,7 @@ std::vector<float> load_object(const std::string &path, GLuint &vbo, GLuint &vao
     }
 
     float div_cf = std::max({max_x - min_x, max_y - min_y, max_z - min_z}) * 3;
-    for (int i = 0; i < vertices.size(); i += 6) {
+    for (int i = 0; i < vertices.size(); i += 8) {
         vertices[i + 0] -= (max_x + min_x) / 2;
         vertices[i + 1] -= (max_y + min_y) / 2;
         vertices[i + 2] -= (max_z + min_z) / 2;
@@ -223,10 +227,12 @@ std::vector<float> load_object(const std::string &path, GLuint &vbo, GLuint &vao
     glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), &vertices[0], GL_STATIC_DRAW);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, triangles.size() * sizeof(unsigned int), &triangles[0], GL_STATIC_DRAW);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void *)0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void *)0);
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void *)(3 * sizeof(float)));
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void *)(3 * sizeof(float)));
     glEnableVertexAttribArray(1);
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void *)(6 * sizeof(float)));
+    glEnableVertexAttribArray(2);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
 
@@ -235,6 +241,22 @@ std::vector<float> load_object(const std::string &path, GLuint &vbo, GLuint &vao
 
     std::cerr << "Object is loaded!" << std::endl;
     return vertices;
+}
+
+unsigned int load_texture(const std::string& path) {
+    int width, height, nrChannels;
+    unsigned char *data = stbi_load(path.c_str(), &width, &height, &nrChannels, 0);
+    unsigned int texture;
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
+    glGenerateMipmap(GL_TEXTURE_2D);
+    stbi_image_free(data);
+    return texture;
 }
 
 int main(int, char **)
@@ -272,7 +294,7 @@ int main(int, char **)
    create_cubemap(cubemapVBO, cubemapVAO);
    GLuint objectVBO, objectVAO, objectEBO;
    unsigned int triangles_number;
-   auto vertices = load_object("../obj/f1_high.obj", objectVBO, objectVAO, objectEBO, triangles_number);
+   auto vertices = load_object("../obj/gondol.obj", objectVBO, objectVAO, objectEBO, triangles_number);
 
    // init shader
    shader_t cubemapShader("cubemap-shader.vs", "cubemap-shader.fs");
@@ -288,6 +310,8 @@ int main(int, char **)
    ImGui::StyleColorsDark();
 
    unsigned int cubemapTexture = load_cubemap("../Yokohama3");
+
+   unsigned int boatTexture = load_texture("../obj/texture/_auto_1.jpg");
 
    float x_rotation = 0.0;
    float y_rotation = 0.0;
@@ -362,21 +386,14 @@ int main(int, char **)
 
       //std::cerr << cameraPos.x << ' ' << cameraPos.y << ' ' << cameraPos.z << std::endl;
 
-      objectPreshader.use();
-      objectPreshader.set_uniform("mvp", glm::value_ptr(objectMVP));
-      glBindVertexArray(objectVAO);
-      glDrawArrays(GL_TRIANGLES, 0, triangles_number * 3);
-      glBindVertexArray(0);
-
       glDepthFunc(GL_LEQUAL);
       objectShader.use();
       objectShader.set_uniform("model", glm::value_ptr(objectModel));
       objectShader.set_uniform("vp", glm::value_ptr(vp));
-      objectShader.set_uniform("cf", ratio);
-      objectShader.set_uniform("cameraPos", cameraPos.x, cameraPos.y, cameraPos.z);
+      objectShader.set_uniform("boatTexture", 0);
       glBindVertexArray(objectVAO);
       glActiveTexture(GL_TEXTURE0);
-      glBindTexture(GL_TEXTURE_CUBE_MAP, cubemapTexture);
+      glBindTexture(GL_TEXTURE_2D, boatTexture);
       glDrawArrays(GL_TRIANGLES, 0, triangles_number * 3);
       glBindVertexArray(0);
 
