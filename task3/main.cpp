@@ -15,7 +15,7 @@
 #include "bindings/imgui_impl_opengl3.h"
 
 #define TINYOBJLOADER_IMPLEMENTATION
-#include "tiny_obj_loader.h"
+#include "libs/tiny_obj_loader.h"
 
 // Include glfw3.h after our OpenGL definitions
 #include <GLFW/glfw3.h>
@@ -26,6 +26,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <cmath>
+#include <unordered_map>
 
 #include "opengl_shader.h"
 
@@ -135,7 +136,51 @@ unsigned int load_cubemap(const std::string &path)
     return textureID;
 }
 
-std::vector<float> load_object(const std::string &path, GLuint &vbo, GLuint &vao, GLuint &ebo, unsigned int &trianglesN) {
+struct RenderingObject {
+    GLuint texture = 0;
+    GLuint vao = 0;
+    GLuint vbo = 0;
+    GLuint ebo = 0;
+    uint trianglesN = 0;
+};
+
+struct Object {
+    std::vector<RenderingObject> objects;
+
+    template<typename T, glm::qualifier Q>
+    void render(shader_t &shader, glm::mat<4, 4, T, Q> mvp) {
+        for (const auto &object : objects) {
+            shader.use();
+            shader.set_uniform("mvp", glm::value_ptr(mvp));
+            shader.set_uniform("tex", 0);
+            glBindVertexArray(object.vao);
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, object.texture);
+            glDrawArrays(GL_TRIANGLES, 0, object.trianglesN * 3);
+            glBindVertexArray(0);
+        }
+    }
+};
+
+GLuint load_texture(const std::string& path) {
+    std::cerr << "Loading texture by path " << path << std::endl;
+    int width, height, nrChannels;
+    unsigned char *data = stbi_load(path.c_str(), &width, &height, &nrChannels, 0);
+    GLuint texture;
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
+    glGenerateMipmap(GL_TEXTURE_2D);
+    stbi_image_free(data);
+    return texture;
+}
+
+Object load_boat(const std::string &path, const std::string &texture_path, float scale,
+                             float left_x, float left_y, float left_z) {
     std::cerr << "Loading object..." << std::endl;
     const std::string& inputfile = path;
     tinyobj::attrib_t attrib;
@@ -143,11 +188,16 @@ std::vector<float> load_object(const std::string &path, GLuint &vbo, GLuint &vao
     std::vector<tinyobj::material_t> materials;
 
     std::string err;
+    std::string warn;
 
-    bool ret = tinyobj::LoadObj(&attrib, &shapes, &materials, &err, inputfile.c_str());
+    bool ret = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, inputfile.c_str());
 
     if (!err.empty()) {
         std::cerr << err << std::endl;
+    }
+
+    if (!warn.empty()) {
+        std::cerr << warn << std::endl;
     }
 
     if (!ret) {
@@ -157,6 +207,10 @@ std::vector<float> load_object(const std::string &path, GLuint &vbo, GLuint &vao
     std::vector<float> vertices;
     std::vector<float> normals;
     std::vector<unsigned int> triangles;
+
+    float min_x = 1e9, max_x = -1e9;
+    float min_y = 1e9, max_y = -1e9;
+    float min_z = 1e9, max_z = -1e9;
 
     for (size_t s = 0; s < shapes.size(); s++) {
         // Loop over faces(polygon)
@@ -170,8 +224,14 @@ std::vector<float> load_object(const std::string &path, GLuint &vbo, GLuint &vao
                 // access to vertex
                 tinyobj::index_t idx = shapes[s].mesh.indices[index_offset + v];
                 tinyobj::real_t vx = attrib.vertices[3*idx.vertex_index+0];
+                min_x = std::min(min_x, vx);
+                max_x = std::max(max_x, vx);
                 tinyobj::real_t vy = attrib.vertices[3*idx.vertex_index+1];
+                min_y = std::min(min_y, vy);
+                max_y = std::max(max_y, vy);
                 tinyobj::real_t vz = attrib.vertices[3*idx.vertex_index+2];
+                min_z = std::min(min_z, vz);
+                max_z = std::max(max_z, vz);
                 vertices.push_back(vx);
                 vertices.push_back(vy);
                 vertices.push_back(vz);
@@ -193,39 +253,21 @@ std::vector<float> load_object(const std::string &path, GLuint &vbo, GLuint &vao
         }
     }
 
-    float min_x = 1e9;
-    float max_x = -1e9;
-    float min_y = 1e9;
-    float max_y = -1e9;
-    float min_z = 1e9;
-    float max_z = -1e9;
-
-    for (int i = 0; i < vertices.size(); i += 8) {
-        min_x = std::min(min_x, vertices[i + 0]);
-        max_x = std::max(max_x, vertices[i + 0]);
-        min_y = std::min(min_y, vertices[i + 1]);
-        max_y = std::max(max_y, vertices[i + 1]);
-        min_z = std::min(min_z, vertices[i + 2]);
-        max_z = std::max(max_z, vertices[i + 2]);
+    for (uint i = 0; i < vertices.size(); i += 8) {
+        vertices[i + 0] = (vertices[i + 0] - min_x) * scale + left_x;
+        vertices[i + 1] = (vertices[i + 1] - min_y) * scale + left_y;
+        vertices[i + 2] = (vertices[i + 2] - min_z) * scale + left_z;
     }
 
-    float div_cf = std::max({max_x - min_x, max_y - min_y, max_z - min_z}) * 3;
-    for (int i = 0; i < vertices.size(); i += 8) {
-        vertices[i + 0] -= (max_x + min_x) / 2;
-        vertices[i + 1] -= (max_y + min_y) / 2;
-        vertices[i + 2] -= (max_z + min_z) / 2;
-        for (int j = 0; j < 3; ++j) {
-            vertices[i + j] /= div_cf;
-        }
-    }
+    RenderingObject object;
 
-    glGenVertexArrays(1, &vao);
-    glGenBuffers(1, &vbo);
-    glGenBuffers(1, &ebo);
-    glBindVertexArray(vao);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glGenVertexArrays(1, &object.vao);
+    glGenBuffers(1, &object.vbo);
+    glGenBuffers(1, &object.ebo);
+    glBindVertexArray(object.vao);
+    glBindBuffer(GL_ARRAY_BUFFER, object.vbo);
     glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), &vertices[0], GL_STATIC_DRAW);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, object.ebo);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, triangles.size() * sizeof(unsigned int), &triangles[0], GL_STATIC_DRAW);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void *)0);
     glEnableVertexAttribArray(0);
@@ -236,27 +278,133 @@ std::vector<float> load_object(const std::string &path, GLuint &vbo, GLuint &vao
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
 
-    trianglesN = triangles.size() / 3;
-    std::cerr << "Triangles " << trianglesN << std::endl;
+    object.texture = load_texture(texture_path);
+
+    object.trianglesN = triangles.size() / 3;
+    std::cerr << "Triangles " << object.trianglesN << std::endl;
 
     std::cerr << "Object is loaded!" << std::endl;
-    return vertices;
+    std::vector<RenderingObject> objs{object};
+    return Object{objs};
 }
 
-unsigned int load_texture(const std::string& path) {
-    int width, height, nrChannels;
-    unsigned char *data = stbi_load(path.c_str(), &width, &height, &nrChannels, 0);
-    unsigned int texture;
-    glGenTextures(1, &texture);
-    glBindTexture(GL_TEXTURE_2D, texture);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
-    glGenerateMipmap(GL_TEXTURE_2D);
-    stbi_image_free(data);
-    return texture;
+Object load_object_with_materials(const std::string &base_path, const std::string &path, float scale,
+                                  float left_x, float left_y, float left_z) {
+    std::cerr << "Loading object " << path << std::endl;
+    const std::string& inputfile = base_path + path;
+    tinyobj::attrib_t attrib;
+    std::vector<tinyobj::shape_t> shapes;
+    std::vector<tinyobj::material_t> materials;
+
+    std::string err;
+    std::string warn;
+
+    bool ret = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, inputfile.c_str(), base_path.c_str());
+    if (!err.empty()) {
+        std::cerr << err << std::endl;
+    }
+    if (!warn.empty()) {
+        std::cerr << warn << std::endl;
+    }
+
+    if (!ret) {
+        exit(1);
+    }
+
+    std::cerr << "Materials: " << materials.size() << std::endl;
+    std::cerr << "Shapes: " << shapes.size() << std::endl;
+
+    std::unordered_map<int, std::vector<float>> material_to_array;
+    std::unordered_map<int, std::vector<uint>> material_to_triangles;
+
+    float min_x = 1e9, max_x = -1e9;
+    float min_y = 1e9, max_y = -1e9;
+    float min_z = 1e9, max_z = -1e9;
+
+    for (size_t s = 0; s < shapes.size(); s++) {
+//        std::cerr << "shape " << s << std::endl;
+//        std::cerr << "Materials: " << shapes[s].mesh.material_ids.size() << std::endl;
+//        std::cerr << "Faces: " << shapes[s].mesh.num_face_vertices.size() << std::endl;
+        // Loop over faces(polygon)
+        size_t index_offset = 0;
+        for (size_t f = 0; f < shapes[s].mesh.num_face_vertices.size(); f++) {
+            int fv = shapes[s].mesh.num_face_vertices[f];
+            int material_id = shapes[s].mesh.material_ids[f];
+            std::vector<float> &array = material_to_array[material_id];
+            std::vector<uint> &triangles = material_to_triangles[material_id];
+
+            assert(fv == 3);
+            // Loop over vertices in the face.
+            for (size_t v = 0; v < fv; v++) {
+                // access to vertex
+                tinyobj::index_t idx = shapes[s].mesh.indices[index_offset + v];
+                tinyobj::real_t vx = attrib.vertices[3*idx.vertex_index+0];
+                min_x = std::min(min_x, vx);
+                max_x = std::max(max_x, vx);
+                tinyobj::real_t vy = attrib.vertices[3*idx.vertex_index+1];
+                min_y = std::min(min_y, vy);
+                max_y = std::max(max_y, vy);
+                tinyobj::real_t vz = attrib.vertices[3*idx.vertex_index+2];
+                min_z = std::min(min_z, vz);
+                max_z = std::max(max_z, vz);
+                array.push_back(vx);
+                array.push_back(vy);
+                array.push_back(vz);
+                tinyobj::real_t nx = attrib.normals[3*idx.normal_index+0];
+                tinyobj::real_t ny = attrib.normals[3*idx.normal_index+1];
+                tinyobj::real_t nz = attrib.normals[3*idx.normal_index+2];
+                array.push_back(nx);
+                array.push_back(ny);
+                array.push_back(nz);
+                tinyobj::real_t tx = attrib.texcoords[2*idx.texcoord_index+0];
+                tinyobj::real_t ty = attrib.texcoords[2*idx.texcoord_index+1];
+                array.push_back(tx);
+                array.push_back(ty);
+                triangles.push_back(triangles.size());
+            }
+            index_offset += fv;
+        }
+    }
+
+    std::vector<RenderingObject> objects;
+    for (auto [material_id, array] : material_to_array) {
+        std::vector<uint> triangles = material_to_triangles[material_id];
+
+        for (uint i = 0; i < array.size(); i += 8) {
+            array[i + 0] = (array[i + 0] - min_x) * scale + left_x;
+            array[i + 1] = (array[i + 1] - min_y) * scale + left_y;
+            array[i + 2] = (array[i + 2] - min_z) * scale + left_z;
+        }
+
+        RenderingObject object;
+
+        object.texture = load_texture(base_path + materials[material_id].diffuse_texname);
+
+        glGenVertexArrays(1, &object.vao);
+        glGenBuffers(1, &object.vbo);
+        glGenBuffers(1, &object.ebo);
+        glBindVertexArray(object.vao);
+        glBindBuffer(GL_ARRAY_BUFFER, object.vbo);
+        glBufferData(GL_ARRAY_BUFFER, array.size() * sizeof(float), &array[0], GL_STATIC_DRAW);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, object.ebo);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, triangles.size() * sizeof(unsigned int), &triangles[0], GL_STATIC_DRAW);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void *) 0);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void *) (3 * sizeof(float)));
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void *) (6 * sizeof(float)));
+        glEnableVertexAttribArray(2);
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+        glBindVertexArray(0);
+
+        object.trianglesN = triangles.size() / 3;
+        std::cerr << "Triangles " << object.trianglesN << std::endl;
+
+        objects.push_back(object);
+    }
+
+    std::cerr << "Object is loaded!" << std::endl;
+    return Object{objects};
 }
 
 int main(int, char **)
@@ -274,13 +422,13 @@ int main(int, char **)
    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
    //glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);            // 3.0+ only
 
-   // Create window with graphics context
-   GLFWwindow *window = glfwCreateWindow(1280, 720, "Dear ImGui - Conan", NULL, NULL);
+    // Create window with graphics context
+    GLFWwindow *window = glfwCreateWindow(400, 400, "Dear ImGui - Conan", NULL, NULL);
 
-   if (window == NULL)
-      return 1;
-   glfwMakeContextCurrent(window);
-   glfwSwapInterval(1); // Enable vsync
+    if (window == NULL)
+        return 1;
+    glfwMakeContextCurrent(window);
+    glfwSwapInterval(1); // Enable vsync
 
    // Initialize GLEW, i.e. fill all possible function pointers for current OpenGL context
    if (glewInit() != GLEW_OK)
@@ -292,14 +440,26 @@ int main(int, char **)
    // create our geometries
    GLuint cubemapVBO, cubemapVAO;
    create_cubemap(cubemapVBO, cubemapVAO);
-   GLuint objectVBO, objectVAO, objectEBO;
-   unsigned int triangles_number;
-   auto vertices = load_object("../obj/gondol.obj", objectVBO, objectVAO, objectEBO, triangles_number);
+   auto boat = load_boat(
+           "../obj/gondol/gondol.obj",
+           "../obj/gondol/_auto_1.jpg",
+           10,
+           -10, -10, -10
+           );
+
+   auto lighthouse = load_object_with_materials(
+            "../obj/lighthouse/",
+            "lighthouse.obj",
+            0.1,
+            0,0,0);
+
+   uint cubemapTexture = load_cubemap("../Teide");
 
    // init shader
    shader_t cubemapShader("cubemap-shader.vs", "cubemap-shader.fs");
-   shader_t objectShader("object-shader.vs", "object-shader.fs");
+   shader_t boatShader("boat-shader.vs", "boat-shader.fs");
    shader_t objectPreshader("object-preshader.vs", "object-preshader.fs");
+   shader_t lighthouseShader("lighthouse-shader.vs", "lighthouse-shader.fs");
 
    // Setup GUI context
    IMGUI_CHECKVERSION();
@@ -309,17 +469,14 @@ int main(int, char **)
    ImGui_ImplOpenGL3_Init(glsl_version);
    ImGui::StyleColorsDark();
 
-   unsigned int cubemapTexture = load_cubemap("../Yokohama3");
-
-   unsigned int boatTexture = load_texture("../obj/texture/_auto_1.jpg");
-
    float x_rotation = 0.0;
    float y_rotation = 0.0;
-   float scale = 0.25;
 
    glEnable(GL_DEPTH_TEST);
 
    auto current_rotation = glm::mat4(1.0);
+
+   auto cameraPos = glm::vec3(0, 0, -1);
 
    while (!glfwWindowShouldClose(window))
    {
@@ -353,10 +510,6 @@ int main(int, char **)
       y_rotation = -delta.x / 40.0;
       x_rotation = delta.y / 40.0;
       float mouse_wheel = io.MouseWheel;
-      scale /= pow(1.01, mouse_wheel);
-      if (scale > 45 || scale <= 0) {
-          scale *= pow(1.01, mouse_wheel);
-      }
       ImGui::End();
 
 
@@ -365,13 +518,13 @@ int main(int, char **)
       auto rotated = current_rotation * rotationX * rotationY;
 
       current_rotation = rotated;
-      auto rotatedAndScaled = glm::scale(rotated, glm::vec3(scale));
 
-      auto cameraPos = glm::vec3(rotatedAndScaled * glm::vec4(0, 0 , -1, 1));
+      auto viewVector = glm::vec3(rotated * glm::vec4(0, 0 , 1, 1));
+      cameraPos += viewVector * float(0.1) * mouse_wheel;
       auto objectModel = glm::mat4(1.0f);
       auto objectView = glm::lookAt<float>(
               cameraPos,
-              glm::vec3(0, 0, 0),
+              cameraPos + viewVector,
               glm::vec3(rotated * glm::vec4(0, 1 , 0, 1))
               );
       auto projection = glm::perspective<float>(45, float(display_w) / float(display_h), 0.001, 100);
@@ -387,15 +540,8 @@ int main(int, char **)
       //std::cerr << cameraPos.x << ' ' << cameraPos.y << ' ' << cameraPos.z << std::endl;
 
       glDepthFunc(GL_LEQUAL);
-      objectShader.use();
-      objectShader.set_uniform("model", glm::value_ptr(objectModel));
-      objectShader.set_uniform("vp", glm::value_ptr(vp));
-      objectShader.set_uniform("boatTexture", 0);
-      glBindVertexArray(objectVAO);
-      glActiveTexture(GL_TEXTURE0);
-      glBindTexture(GL_TEXTURE_2D, boatTexture);
-      glDrawArrays(GL_TRIANGLES, 0, triangles_number * 3);
-      glBindVertexArray(0);
+      boat.render(boatShader, objectMVP);
+      lighthouse.render(lighthouseShader, objectMVP);
 
       auto cubemapView = glm::mat4(glm::mat3(objectView));
       auto cubemapVP = projection * cubemapView;
