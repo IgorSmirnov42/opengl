@@ -35,6 +35,10 @@ add_executable( 3Dscene
                 assets/cubemap-shader.fs
                 assets/boat-shader.vs
                 assets/boat-shader.fs
+                assets/water-shader.fs
+                assets/water-shader.vs
+                assets/landscape-shader.fs
+                assets/landscape-shader.vs
                 assets/lighthouse-shader.vs
                 assets/lighthouse-shader.fs
                 assets/object-preshader.vs
@@ -50,6 +54,10 @@ add_custom_command(TARGET 3Dscene
     COMMAND ${CMAKE_COMMAND} -E copy ${PROJECT_SOURCE_DIR}/assets/lighthouse-shader.fs ${PROJECT_BINARY_DIR}
     COMMAND ${CMAKE_COMMAND} -E copy ${PROJECT_SOURCE_DIR}/assets/object-preshader.vs ${PROJECT_BINARY_DIR}
     COMMAND ${CMAKE_COMMAND} -E copy ${PROJECT_SOURCE_DIR}/assets/object-preshader.fs ${PROJECT_BINARY_DIR}
+    COMMAND ${CMAKE_COMMAND} -E copy ${PROJECT_SOURCE_DIR}/assets/water-shader.vs ${PROJECT_BINARY_DIR}
+    COMMAND ${CMAKE_COMMAND} -E copy ${PROJECT_SOURCE_DIR}/assets/water-shader.fs ${PROJECT_BINARY_DIR}
+    COMMAND ${CMAKE_COMMAND} -E copy ${PROJECT_SOURCE_DIR}/assets/landscape-shader.vs ${PROJECT_BINARY_DIR}
+    COMMAND ${CMAKE_COMMAND} -E copy ${PROJECT_SOURCE_DIR}/assets/landscape-shader.fs ${PROJECT_BINARY_DIR}
 )
 
 target_compile_definitions(3Dscene PUBLIC IMGUI_IMPL_OPENGL_LOADER_GLEW)

@@ -89,24 +89,33 @@ void create_cubemap(GLuint &vbo, GLuint &vao)
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), nullptr);
 }
 
-void create_water(GLuint &vbo, GLuint &vao, float INF)
+void create_water(GLuint &vbo, GLuint &vao, GLuint &ebo, float INF)
 {
     float vertices[] = {
-        -INF, -INF, 0,
-        INF, -INF, 0,
-        -INF, INF, 0,
-
-        INF, -INF, 0,
-        INF, INF, 0,
-        -INF, INF, 0
+        0, -20, 0, 1,
+        1,  0, 0, 0,
+        0, 0, 1, 0,
+        -1, 0, 0, 0,
+        0, 0, -1, 0,
+    };
+    uint triangles[] = {
+        0, 1, 2,
+        0, 2, 3,
+        0, 3, 4,
+        0, 4, 1
     };
     glGenVertexArrays(1, &vao);
     glGenBuffers(1, &vbo);
+    glGenBuffers(1, &ebo);
     glBindVertexArray(vao);
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), &vertices, GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(triangles), triangles, GL_STATIC_DRAW);
+    glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 4 * sizeof(float), nullptr);
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), nullptr);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
 }
 
 unsigned int load_cubemap(const std::string &path)
@@ -232,15 +241,15 @@ Object load_object_with_materials(const std::string &base_path, const std::strin
     float min_y = 1e9, max_y = -1e9;
     float min_z = 1e9, max_z = -1e9;
 
-    for (size_t s = 0; s < shapes.size(); s++) {
+    for (auto & shape : shapes) {
 //        std::cerr << "shape " << s << std::endl;
 //        std::cerr << "Materials: " << shapes[s].mesh.material_ids.size() << std::endl;
 //        std::cerr << "Faces: " << shapes[s].mesh.num_face_vertices.size() << std::endl;
         // Loop over faces(polygon)
         size_t index_offset = 0;
-        for (size_t f = 0; f < shapes[s].mesh.num_face_vertices.size(); f++) {
-            int fv = shapes[s].mesh.num_face_vertices[f];
-            int material_id = shapes[s].mesh.material_ids[f];
+        for (size_t f = 0; f < shape.mesh.num_face_vertices.size(); f++) {
+            int fv = shape.mesh.num_face_vertices[f];
+            int material_id = shape.mesh.material_ids[f];
             std::vector<float> &array = material_to_array[material_id];
             std::vector<uint> &triangles = material_to_triangles[material_id];
 
@@ -248,7 +257,7 @@ Object load_object_with_materials(const std::string &base_path, const std::strin
             // Loop over vertices in the face.
             for (size_t v = 0; v < fv; v++) {
                 // access to vertex
-                tinyobj::index_t idx = shapes[s].mesh.indices[index_offset + v];
+                tinyobj::index_t idx = shape.mesh.indices[index_offset + v];
                 tinyobj::real_t vx = attrib.vertices[3*idx.vertex_index+0];
                 min_x = std::min(min_x, vx);
                 max_x = std::max(max_x, vx);
@@ -299,7 +308,7 @@ Object load_object_with_materials(const std::string &base_path, const std::strin
         glBufferData(GL_ARRAY_BUFFER, array.size() * sizeof(float), &array[0], GL_STATIC_DRAW);
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, object.ebo);
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, triangles.size() * sizeof(unsigned int), &triangles[0], GL_STATIC_DRAW);
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void *) 0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void *) nullptr);
         glEnableVertexAttribArray(0);
         glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void *) (3 * sizeof(float)));
         glEnableVertexAttribArray(1);
@@ -318,6 +327,126 @@ Object load_object_with_materials(const std::string &base_path, const std::strin
     return Object{objects};
 }
 
+struct Landscape {
+    GLuint vao = 0;
+    GLuint vbo = 0;
+    GLuint ebo = 0;
+    uint trianglesN = 0;
+    std::vector<GLuint> tileTextures;
+    float totalLength = 0;
+    glm::vec3 heights = glm::vec3(0.0);
+
+    template<typename T, glm::qualifier Q>
+    void render(shader_t &shader, glm::mat<4, 4, T, Q> model, glm::mat<4, 4, T, Q> vp) {
+        shader.use();
+        shader.set_uniform("model", glm::value_ptr(model));
+        shader.set_uniform("vp", glm::value_ptr(vp));
+        shader.set_uniform("lowTexture", 0);
+        shader.set_uniform("middleTexture", 1);
+        shader.set_uniform("highTexture", 2);
+        shader.set_uniform("totalLength", totalLength);
+        shader.set_uniform("heights", heights.x, heights.y, heights.z);
+        glBindVertexArray(vao);
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, tileTextures[0]);
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, tileTextures[1]);
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_2D, tileTextures[2]);
+        glDrawElements(GL_TRIANGLES, trianglesN * 3, GL_UNSIGNED_INT, nullptr);
+        glBindVertexArray(0);
+    }
+};
+
+struct TileInfo {
+    std::string filename;
+    std::vector<unsigned char> color;
+    float height;
+};
+
+Landscape load_landscape(const std::string &heightmapFolderPath,
+                         const std::vector<TileInfo> &tiles,
+                         float pixelLength,
+                         glm::vec3 heights) {
+    static const std::string HEIGHT_MAP_FILEMANE = "hm.png";
+    static const std::string HEIGHT_MAP_NORMALS_FILEMANE = "nm.png";
+    int width, height, nrChannels;
+    unsigned char *heightMap = stbi_load((heightmapFolderPath + HEIGHT_MAP_FILEMANE).c_str(), &width, &height, &nrChannels, 0);
+    unsigned char *heightMapNormals = stbi_load((heightmapFolderPath + HEIGHT_MAP_NORMALS_FILEMANE).c_str(), &width, &height, &nrChannels, 0);
+    std::map<std::vector<unsigned char>, float> color2height;
+    for (const auto &tile : tiles) {
+        color2height[tile.color] = tile.height;
+    }
+    std::vector<float> array;
+    for (int h = 0; h < height; ++h) {
+        for (int w = 0; w < width; ++w) {
+            int i = ((h - 1) * width + w) * 4;
+            unsigned char r = heightMap[i];
+            unsigned char g = heightMap[i + 1];
+            unsigned char b = heightMap[i + 2];
+            float curHeight = color2height[{r, g, b}];
+            float x = float(heightMapNormals[i]) / 255;
+            float y = float(heightMapNormals[i + 1]) / 255;
+            float z = float(heightMapNormals[i + 2]) / 255;
+            glm::vec3 normal = glm::normalize(glm::vec3(x, y, z));
+            glm::vec3 coords = glm::vec3(h * pixelLength, curHeight, w * pixelLength);
+            array.push_back(coords.x);
+            array.push_back(coords.y);
+            array.push_back(coords.z);
+            array.push_back(normal.x);
+            array.push_back(normal.y);
+            array.push_back(normal.z);
+        }
+    }
+    stbi_image_free(heightMap);
+    stbi_image_free(heightMapNormals);
+
+    assert(height % 2 == 0);
+    assert(width % 2 == 0);
+    std::vector<uint> triangles;
+    for (int h = 0; h + 1 < height; ++h) {
+        for (int w = 0; w + 1 < width; ++w) {
+            uint a = h * (width - 1) + w;
+            uint b = a + 1;
+            uint c = a + width;
+            uint d = c + 1;
+            triangles.push_back(c);
+            triangles.push_back(a);
+            triangles.push_back(b);
+            triangles.push_back(c);
+            triangles.push_back(b);
+            triangles.push_back(d);
+        }
+    }
+    Landscape object;
+    assert(width == height);
+    object.heights = heights;
+    object.totalLength = height * pixelLength;
+    object.trianglesN = triangles.size() / 3;
+    glGenVertexArrays(1, &object.vao);
+    glGenBuffers(1, &object.vbo);
+    glGenBuffers(1, &object.ebo);
+    glBindVertexArray(object.vao);
+    glBindBuffer(GL_ARRAY_BUFFER, object.vbo);
+    glBufferData(GL_ARRAY_BUFFER, array.size() * sizeof(float), &array[0], GL_STATIC_DRAW);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, object.ebo);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, triangles.size() * sizeof(unsigned int), &triangles[0], GL_STATIC_DRAW);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void *) nullptr);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void *) (3 * sizeof(float)));
+    glEnableVertexAttribArray(1);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
+
+    object.tileTextures = {
+        load_texture(heightmapFolderPath + tiles[0].filename),
+        load_texture(heightmapFolderPath + tiles[1].filename),
+        load_texture(heightmapFolderPath + tiles[2].filename)
+    };
+
+    return object;
+}
+
 int main(int, char **)
 {
     // Use GLFW to create a simple window
@@ -334,9 +463,9 @@ int main(int, char **)
     //glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);            // 3.0+ only
 
     // Create window with graphics context
-    GLFWwindow *window = glfwCreateWindow(400, 400, "Dear ImGui - Conan", NULL, NULL);
+    GLFWwindow *window = glfwCreateWindow(400, 400, "Dear ImGui - Conan", nullptr, nullptr);
 
-    if (window == NULL)
+    if (window == nullptr)
         return 1;
     glfwMakeContextCurrent(window);
     glfwSwapInterval(1); // Enable vsync
@@ -355,7 +484,7 @@ int main(int, char **)
             "../obj/gondol/",
            "gondol.obj",
            10,
-           -10, -10, -10);
+           -10, -21, -10);
 
     auto lighthouse = load_object_with_materials(
             "../obj/lighthouse/",
@@ -363,13 +492,25 @@ int main(int, char **)
             1,
             0,0,0);
 
+    GLuint waterVBO, waterVAO, waterEBO;
+    create_water(waterVBO, waterVAO, waterEBO, 1e4);
+
     uint cubemapTexture = load_cubemap("../Teide");
+
+    glm::vec3 heights = glm::vec3(0.0, 10.0, 20.0);
+    std::vector<TileInfo> tileInfos;
+    tileInfos.push_back({"SandWhite.jpg", std::vector<unsigned char>{255, 250, 188}, heights.x});
+    tileInfos.push_back({"SandRed.jpg", std::vector<unsigned char>{203, 226, 163}, heights.y});
+    tileInfos.push_back({"SandBlack.jpg", std::vector<unsigned char>{251, 203, 114}, heights.z});
+    Landscape landscape = load_landscape("../obj/heightmap/", tileInfos, 10.0, heights);
 
     // init shader
     shader_t cubemapShader("cubemap-shader.vs", "cubemap-shader.fs");
     shader_t boatShader("boat-shader.vs", "boat-shader.fs");
     shader_t objectPreshader("object-preshader.vs", "object-preshader.fs");
     shader_t lighthouseShader("lighthouse-shader.vs", "lighthouse-shader.fs");
+    shader_t waterShader("water-shader.vs", "water-shader.fs");
+    shader_t landscapeShader("landscape-shader.vs", "landscape-shader.fs");
 
     // Setup GUI context
     IMGUI_CHECKVERSION();
@@ -427,15 +568,16 @@ int main(int, char **)
         current_rotation = rotated;
 
         auto viewVector = glm::vec3(rotated * glm::vec4(0, 0 , 1, 1));
-        cameraPos += viewVector * float(0.1) * mouse_wheel;
+        cameraPos += viewVector * float(1) * mouse_wheel;
+        //std::cerr << cameraPos.x << ' ' << cameraPos.y << ' ' << cameraPos.z << std::endl;
         auto objectModel = glm::mat4(1.0f);
         auto objectView = glm::lookAt<float>(
                 cameraPos,
                 cameraPos + viewVector,
                 glm::vec3(rotated * glm::vec4(0, 1 , 0, 1)));
-        auto projection = glm::perspective<float>(45, float(display_w) / float(display_h), 0.001, 100);
-        auto vp = projection * objectView;
-        auto objectMVP = vp * objectModel;
+        auto projection = glm::perspective<float>(45, float(display_w) / float(display_h), 0.001, 10000);
+        auto objectVP = projection * objectView;
+        auto objectMVP = objectVP * objectModel;
 
 //      for (int i = 0; i < vertices.size(); i += 6) {
 //          auto point = glm::vec4(vertices[i], vertices[i + 1], vertices[i + 2], 1.0);
@@ -445,9 +587,22 @@ int main(int, char **)
 
       //std::cerr << cameraPos.x << ' ' << cameraPos.y << ' ' << cameraPos.z << std::endl;
 
-        glDepthFunc(GL_LEQUAL);
         boat.render(boatShader, objectMVP);
         lighthouse.render(lighthouseShader, objectMVP);
+        landscape.render(landscapeShader, objectModel, objectVP);
+
+        waterShader.use();
+        waterShader.set_uniform("cameraPos", cameraPos.x, cameraPos.y, cameraPos.z);
+        waterShader.set_uniform("model", glm::value_ptr(objectModel));
+        waterShader.set_uniform("vp", glm::value_ptr(objectVP));
+        waterShader.set_uniform("cubemap", 0);
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_CUBE_MAP, cubemapTexture);
+        glBindVertexArray(waterVAO);
+        glDrawElements(GL_TRIANGLES, 12, GL_UNSIGNED_INT, 0);
+        glBindVertexArray(0);
+
+        glDepthFunc(GL_LEQUAL);
 
         auto cubemapView = glm::mat4(glm::mat3(objectView));
         auto cubemapVP = projection * cubemapView;
