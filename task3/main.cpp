@@ -89,7 +89,7 @@ void create_cubemap(GLuint &vbo, GLuint &vao)
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), nullptr);
 }
 
-void create_water(GLuint &vbo, GLuint &vao, GLuint &ebo, float INF)
+void create_water(GLuint &vbo, GLuint &vao, GLuint &ebo, float landscapeMaxX, float landscapeMaxZ)
 {
     float vertices[] = {
         0, -20, 0, 1,
@@ -97,12 +97,15 @@ void create_water(GLuint &vbo, GLuint &vao, GLuint &ebo, float INF)
         0, 0, 1, 0,
         -1, 0, 0, 0,
         0, 0, -1, 0,
+        landscapeMaxX, -20, landscapeMaxZ, 1,
     };
     uint triangles[] = {
-        0, 1, 2,
         0, 2, 3,
         0, 3, 4,
-        0, 4, 1
+        0, 4, 1,
+        5, 1, 2,
+        5, 4, 1,
+        5, 2, 3
     };
     glGenVertexArrays(1, &vao);
     glGenBuffers(1, &vbo);
@@ -209,7 +212,7 @@ GLuint load_texture(const std::string& path) {
 }
 
 Object load_object_with_materials(const std::string &base_path, const std::string &path, float scale,
-                                  float left_x, float left_y, float left_z) {
+                                  float center_x, float center_y, float center_z) {
     std::cerr << "Loading object " << path << std::endl;
     const std::string& inputfile = base_path + path;
     tinyobj::attrib_t attrib;
@@ -291,9 +294,9 @@ Object load_object_with_materials(const std::string &base_path, const std::strin
         std::vector<uint> triangles = material_to_triangles[material_id];
 
         for (uint i = 0; i < array.size(); i += 8) {
-            array[i + 0] = (array[i + 0] - min_x) * scale + left_x;
-            array[i + 1] = (array[i + 1] - min_y) * scale + left_y;
-            array[i + 2] = (array[i + 2] - min_z) * scale + left_z;
+            array[i + 0] = (array[i + 0] - min_x - (max_x - min_x) / 2) * scale + center_x;
+            array[i + 1] = (array[i + 1] - min_y - (max_y - min_y) / 2) * scale + center_y;
+            array[i + 2] = (array[i + 2] - min_z - (max_z - min_z) / 2) * scale + center_z;
         }
 
         RenderingObject object;
@@ -333,7 +336,6 @@ struct Landscape {
     GLuint ebo = 0;
     uint trianglesN = 0;
     std::vector<GLuint> tileTextures;
-    float totalLength = 0;
     glm::vec3 heights = glm::vec3(0.0);
 
     template<typename T, glm::qualifier Q>
@@ -344,7 +346,6 @@ struct Landscape {
         shader.set_uniform("lowTexture", 0);
         shader.set_uniform("middleTexture", 1);
         shader.set_uniform("highTexture", 2);
-        shader.set_uniform("totalLength", totalLength);
         shader.set_uniform("heights", heights.x, heights.y, heights.z);
         glBindVertexArray(vao);
         glActiveTexture(GL_TEXTURE0);
@@ -360,34 +361,51 @@ struct Landscape {
 
 struct TileInfo {
     std::string filename;
-    std::vector<unsigned char> color;
-    float height;
 };
+
+std::vector<std::vector<std::vector<unsigned char >>> addBorders(const unsigned char * map, int height, int width) {
+    std::vector<std::vector<std::vector<unsigned char >>> result;
+    result.resize(height + 2);
+    for (int h = 0; h < height + 2; ++h) {
+        result[h].resize(width + 2, std::vector<unsigned char >{0, 0, 0});
+    }
+    for (int h = 0; h < height; ++h) {
+        for (int w = 0; w < width; ++w) {
+            int i = (h * width + w) * 4;
+            result[h + 1][w + 1] = {map[i], map[i + 1], map[i + 2]};
+        }
+    }
+    return result;
+}
 
 Landscape load_landscape(const std::string &heightmapFolderPath,
                          const std::vector<TileInfo> &tiles,
                          float pixelLength,
-                         glm::vec3 heights) {
+                         glm::vec3 heights,
+                         float maxHeight,
+                         float &maxX,
+                         float &maxZ) {
     static const std::string HEIGHT_MAP_FILEMANE = "hm.png";
     static const std::string HEIGHT_MAP_NORMALS_FILEMANE = "nm.png";
-    int width, height, nrChannels;
-    unsigned char *heightMap = stbi_load((heightmapFolderPath + HEIGHT_MAP_FILEMANE).c_str(), &width, &height, &nrChannels, 0);
-    unsigned char *heightMapNormals = stbi_load((heightmapFolderPath + HEIGHT_MAP_NORMALS_FILEMANE).c_str(), &width, &height, &nrChannels, 0);
-    std::map<std::vector<unsigned char>, float> color2height;
-    for (const auto &tile : tiles) {
-        color2height[tile.color] = tile.height;
-    }
+    int heightMapWidth, heightMapHeight, nrChannels;
+    unsigned char *heightMapWithoutBorders = stbi_load((heightmapFolderPath + HEIGHT_MAP_FILEMANE).c_str(), &heightMapWidth, &heightMapHeight, &nrChannels, 0);
+    std::vector<std::vector<std::vector<unsigned char >>> heightMap = addBorders(heightMapWithoutBorders, heightMapHeight, heightMapWidth);
+    stbi_image_free(heightMapWithoutBorders);
+    heightMapHeight += 2;
+    heightMapWidth += 2;
+    maxX = float(heightMapHeight) * pixelLength;
+    maxZ = float(heightMapWidth) * pixelLength;
+    //unsigned char *heightMapNormals = stbi_load((heightmapFolderPath + HEIGHT_MAP_NORMALS_FILEMANE).c_str(), &width, &height, &nrChannels, 0);
     std::vector<float> array;
-    for (int h = 0; h < height; ++h) {
-        for (int w = 0; w < width; ++w) {
-            int i = ((h - 1) * width + w) * 4;
-            unsigned char r = heightMap[i];
-            unsigned char g = heightMap[i + 1];
-            unsigned char b = heightMap[i + 2];
-            float curHeight = color2height[{r, g, b}];
-            float x = float(heightMapNormals[i]) / 255;
-            float y = float(heightMapNormals[i + 1]) / 255;
-            float z = float(heightMapNormals[i + 2]) / 255;
+    //assert(nrChannels == 4);
+
+    for (int h = 0; h < heightMapHeight; ++h) {
+        for (int w = 0; w < heightMapWidth; ++w) {
+            unsigned short r = heightMap[h][w][0];
+            float curHeight = float(r) / 255 * maxHeight;
+            float x = float(0) / 255;
+            float y = float(0) / 255;
+            float z = float(0) / 255;
             glm::vec3 normal = glm::normalize(glm::vec3(x, y, z));
             glm::vec3 coords = glm::vec3(h * pixelLength, curHeight, w * pixelLength);
             array.push_back(coords.x);
@@ -398,17 +416,14 @@ Landscape load_landscape(const std::string &heightmapFolderPath,
             array.push_back(normal.z);
         }
     }
-    stbi_image_free(heightMap);
-    stbi_image_free(heightMapNormals);
+    //stbi_image_free(heightMapNormals);
 
-    assert(height % 2 == 0);
-    assert(width % 2 == 0);
     std::vector<uint> triangles;
-    for (int h = 0; h + 1 < height; ++h) {
-        for (int w = 0; w + 1 < width; ++w) {
-            uint a = h * (width - 1) + w;
+    for (int h = 0; h + 1 < heightMapHeight; ++h) {
+        for (int w = 0; w + 1 < heightMapWidth; ++w) {
+            uint a = h * heightMapWidth + w;
             uint b = a + 1;
-            uint c = a + width;
+            uint c = a + heightMapWidth;
             uint d = c + 1;
             triangles.push_back(c);
             triangles.push_back(a);
@@ -419,9 +434,7 @@ Landscape load_landscape(const std::string &heightmapFolderPath,
         }
     }
     Landscape object;
-    assert(width == height);
     object.heights = heights;
-    object.totalLength = height * pixelLength;
     object.trianglesN = triangles.size() / 3;
     glGenVertexArrays(1, &object.vao);
     glGenBuffers(1, &object.vbo);
@@ -483,8 +496,8 @@ int main(int, char **)
     auto boat = load_object_with_materials(
             "../obj/gondol/",
            "gondol.obj",
-           10,
-           -10, -21, -10);
+           5,
+           0, -15, 0);
 
     auto lighthouse = load_object_with_materials(
             "../obj/lighthouse/",
@@ -492,17 +505,25 @@ int main(int, char **)
             1,
             0,0,0);
 
-    GLuint waterVBO, waterVAO, waterEBO;
-    create_water(waterVBO, waterVAO, waterEBO, 1e4);
-
     uint cubemapTexture = load_cubemap("../Teide");
 
-    glm::vec3 heights = glm::vec3(0.0, 10.0, 20.0);
+    glm::vec3 heights = glm::vec3(0.0, 8.0, 30.0);
     std::vector<TileInfo> tileInfos;
-    tileInfos.push_back({"SandWhite.jpg", std::vector<unsigned char>{255, 250, 188}, heights.x});
-    tileInfos.push_back({"SandRed.jpg", std::vector<unsigned char>{203, 226, 163}, heights.y});
-    tileInfos.push_back({"SandBlack.jpg", std::vector<unsigned char>{251, 203, 114}, heights.z});
-    Landscape landscape = load_landscape("../obj/heightmap/", tileInfos, 10.0, heights);
+    tileInfos.push_back({"SandWhite.jpg"});
+    tileInfos.push_back({"SandBlack.jpg"});
+    tileInfos.push_back({"Rock.jpg"});
+    float landscapeMaxX, landscapeMaxZ;
+    Landscape landscape = load_landscape(
+            "../obj/heightmap/",
+            tileInfos,
+            0.1,
+            heights,
+            heights.z,
+            landscapeMaxX,
+            landscapeMaxZ);
+
+    GLuint waterVBO, waterVAO, waterEBO;
+    create_water(waterVBO, waterVAO, waterEBO, landscapeMaxX, landscapeMaxZ);
 
     // init shader
     shader_t cubemapShader("cubemap-shader.vs", "cubemap-shader.fs");
@@ -525,6 +546,8 @@ int main(int, char **)
     auto current_rotation = glm::mat4(1.0);
 
     auto cameraPos = glm::vec3(0, 0, -1);
+
+    auto start = std::chrono::system_clock::now();
 
     while (!glfwWindowShouldClose(window))
     {
@@ -549,8 +572,8 @@ int main(int, char **)
         // GUI
         ImGui::Begin("Settings");
 
-        static float ratio = 1.52;
-        ImGui::SliderFloat("ratio", &ratio, 1.0, 3.0);
+        static float landHeight;
+        ImGui::SliderFloat("land height", &landHeight, -50, -15);
 
         ImVec2 delta = ImGui::GetMouseDragDelta();
         ImGui::ResetMouseDragDelta();
@@ -586,11 +609,34 @@ int main(int, char **)
 //      }
 
       //std::cerr << cameraPos.x << ' ' << cameraPos.y << ' ' << cameraPos.z << std::endl;
+        glDepthFunc(GL_LESS);
+        auto end = std::chrono::system_clock::now();
+        double elapsedTime = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() * 1e-4;
 
-        boat.render(boatShader, objectMVP);
+        auto circleRadius = std::max(landscapeMaxX, landscapeMaxZ) / 2 * sqrt(2) + 20;
+        auto startX = circleRadius * sin(elapsedTime) + landscapeMaxX / 2;
+        auto startZ = circleRadius * cos(elapsedTime) + landscapeMaxZ / 2;
+        auto boatMVP = objectVP *
+                glm::mat4x4(
+                        1, 0, 0, 0,
+                        0, 1, 0, 0,
+                        0, 0, 1, 0,
+                        startX, 0, startZ, 1
+                ) *
+                objectModel *
+                glm::rotate(glm::mat4(1.0), float(elapsedTime + M_PI / 2), glm::vec3(0, 1, 0));
+        boat.render(boatShader, boatMVP);
         lighthouse.render(lighthouseShader, objectMVP);
-        landscape.render(landscapeShader, objectModel, objectVP);
 
+        auto landscapeModel = glm::mat4x4(
+            1, 0, 0, 0,
+            0, 1, 0, 0,
+            0, 0, 1, 0,
+            0, -20, 0, 1
+        ) * objectModel;
+        landscape.render(landscapeShader, landscapeModel, objectVP);
+
+        glDepthFunc(GL_LEQUAL);
         waterShader.use();
         waterShader.set_uniform("cameraPos", cameraPos.x, cameraPos.y, cameraPos.z);
         waterShader.set_uniform("model", glm::value_ptr(objectModel));
@@ -599,7 +645,7 @@ int main(int, char **)
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_CUBE_MAP, cubemapTexture);
         glBindVertexArray(waterVAO);
-        glDrawElements(GL_TRIANGLES, 12, GL_UNSIGNED_INT, 0);
+        glDrawElements(GL_TRIANGLES, 18, GL_UNSIGNED_INT, nullptr);
         glBindVertexArray(0);
 
         glDepthFunc(GL_LEQUAL);
