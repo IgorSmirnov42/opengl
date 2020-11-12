@@ -103,9 +103,10 @@ void create_water(GLuint &vbo, GLuint &vao, GLuint &ebo, float landscapeMaxX, fl
         0, 2, 3,
         0, 3, 4,
         0, 4, 1,
-        5, 1, 2,
-        5, 4, 1,
-        5, 2, 3
+        0, 1, 2,
+//        5, 1, 2,
+//        5, 4, 1,
+//        5, 2, 3
     };
     glGenVertexArrays(1, &vao);
     glGenBuffers(1, &vbo);
@@ -212,7 +213,7 @@ GLuint load_texture(const std::string& path) {
 }
 
 Object load_object_with_materials(const std::string &base_path, const std::string &path, float scale,
-                                  float center_x, float center_y, float center_z) {
+                                  float center_x, float center_z, float low_y) {
     std::cerr << "Loading object " << path << std::endl;
     const std::string& inputfile = base_path + path;
     tinyobj::attrib_t attrib;
@@ -295,7 +296,7 @@ Object load_object_with_materials(const std::string &base_path, const std::strin
 
         for (uint i = 0; i < array.size(); i += 8) {
             array[i + 0] = (array[i + 0] - min_x - (max_x - min_x) / 2) * scale + center_x;
-            array[i + 1] = (array[i + 1] - min_y - (max_y - min_y) / 2) * scale + center_y;
+            array[i + 1] = (array[i + 1] - min_y) * scale + low_y;
             array[i + 2] = (array[i + 2] - min_z - (max_z - min_z) / 2) * scale + center_z;
         }
 
@@ -363,11 +364,12 @@ struct TileInfo {
     std::string filename;
 };
 
-std::vector<std::vector<std::vector<unsigned char >>> addBorders(const unsigned char * map, int height, int width) {
-    std::vector<std::vector<std::vector<unsigned char >>> result;
+std::vector<std::vector<std::vector<unsigned char>>> addBorders(const unsigned char * map, int height, int width,
+                                                                std::vector<unsigned char> border) {
+    std::vector<std::vector<std::vector<unsigned char>>> result;
     result.resize(height + 2);
     for (int h = 0; h < height + 2; ++h) {
-        result[h].resize(width + 2, std::vector<unsigned char >{0, 0, 0});
+        result[h].resize(width + 2, border);
     }
     for (int h = 0; h < height; ++h) {
         for (int w = 0; w < width; ++w) {
@@ -384,20 +386,27 @@ Landscape load_landscape(const std::string &heightmapFolderPath,
                          glm::vec3 heights,
                          float maxHeight,
                          float &maxX,
-                         float &maxZ) {
+                         float &maxZ,
+                         float lighthouseX,
+                         float lighthouseZ,
+                         float &lighthouseY) {
     static const std::string HEIGHT_MAP_FILEMANE = "hm.png";
     static const std::string HEIGHT_MAP_NORMALS_FILEMANE = "nm.png";
     int heightMapWidth, heightMapHeight, nrChannels;
     unsigned char *heightMapWithoutBorders = stbi_load((heightmapFolderPath + HEIGHT_MAP_FILEMANE).c_str(), &heightMapWidth, &heightMapHeight, &nrChannels, 0);
-    std::vector<std::vector<std::vector<unsigned char >>> heightMap = addBorders(heightMapWithoutBorders, heightMapHeight, heightMapWidth);
+    std::vector<std::vector<std::vector<unsigned char >>> heightMap = addBorders(heightMapWithoutBorders,
+                                                                                 heightMapHeight,
+                                                                                 heightMapWidth,
+                                                                                 std::vector<unsigned char>{0, 0, 0});
     stbi_image_free(heightMapWithoutBorders);
     heightMapHeight += 2;
     heightMapWidth += 2;
-    maxX = float(heightMapHeight) * pixelLength;
-    maxZ = float(heightMapWidth) * pixelLength;
+    maxX = float(heightMapHeight - 1) * pixelLength;
+    maxZ = float(heightMapWidth - 1) * pixelLength;
     //unsigned char *heightMapNormals = stbi_load((heightmapFolderPath + HEIGHT_MAP_NORMALS_FILEMANE).c_str(), &width, &height, &nrChannels, 0);
     std::vector<float> array;
     //assert(nrChannels == 4);
+    lighthouseY = 0;
 
     for (int h = 0; h < heightMapHeight; ++h) {
         for (int w = 0; w < heightMapWidth; ++w) {
@@ -408,6 +417,10 @@ Landscape load_landscape(const std::string &heightmapFolderPath,
             float z = float(0) / 255;
             glm::vec3 normal = glm::normalize(glm::vec3(x, y, z));
             glm::vec3 coords = glm::vec3(h * pixelLength, curHeight, w * pixelLength);
+            if ((h - 1) * pixelLength <= lighthouseX && lighthouseX <= h * pixelLength &&
+                    (w - 1) * pixelLength <= lighthouseZ && lighthouseZ <= w * pixelLength) {
+                lighthouseY = curHeight;
+            }
             array.push_back(coords.x);
             array.push_back(coords.y);
             array.push_back(coords.z);
@@ -433,6 +446,7 @@ Landscape load_landscape(const std::string &heightmapFolderPath,
             triangles.push_back(d);
         }
     }
+
     Landscape object;
     object.heights = heights;
     object.trianglesN = triangles.size() / 3;
@@ -458,6 +472,23 @@ Landscape load_landscape(const std::string &heightmapFolderPath,
     };
 
     return object;
+}
+
+void initReflectTexture(GLuint &texColorBuffer, int width, int height) {
+    glGenTextures(1, &texColorBuffer);
+    glBindTexture(GL_TEXTURE_2D, texColorBuffer);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texColorBuffer, 0);
+}
+
+float sign(float x) {
+    if (x > 0) return 1;
+    if (x < 0) return -1;
+    return 0;
 }
 
 int main(int, char **)
@@ -497,13 +528,7 @@ int main(int, char **)
             "../obj/gondol/",
            "gondol.obj",
            5,
-           0, -15, 0);
-
-    auto lighthouse = load_object_with_materials(
-            "../obj/lighthouse/",
-            "lighthouse.obj",
-            1,
-            0,0,0);
+           0, 0, -21);
 
     uint cubemapTexture = load_cubemap("../Teide");
 
@@ -513,6 +538,7 @@ int main(int, char **)
     tileInfos.push_back({"SandBlack.jpg"});
     tileInfos.push_back({"Rock.jpg"});
     float landscapeMaxX, landscapeMaxZ;
+    float lighthouseX = 20, lighthouseY, lighthouseZ = 20;
     Landscape landscape = load_landscape(
             "../obj/heightmap/",
             tileInfos,
@@ -520,10 +546,25 @@ int main(int, char **)
             heights,
             heights.z,
             landscapeMaxX,
-            landscapeMaxZ);
+            landscapeMaxZ,
+            lighthouseX,
+            lighthouseZ,
+            lighthouseY);
+
+    lighthouseY -= 25;
+
+    auto lighthouse = load_object_with_materials(
+            "../obj/lighthouse/",
+            "lighthouse.obj",
+            1,
+            lighthouseX, lighthouseZ, lighthouseY);
 
     GLuint waterVBO, waterVAO, waterEBO;
     create_water(waterVBO, waterVAO, waterEBO, landscapeMaxX, landscapeMaxZ);
+    GLuint waterDuDv = load_texture("../obj/water/dudv.png");
+
+    GLuint reflectBuffer;
+    glGenFramebuffers(1, &reflectBuffer);
 
     // init shader
     shader_t cubemapShader("cubemap-shader.vs", "cubemap-shader.fs");
@@ -543,9 +584,10 @@ int main(int, char **)
 
     glEnable(GL_DEPTH_TEST);
 
-    auto current_rotation = glm::mat4(1.0);
+    auto currentRotation = glm::mat4(1.0);
+    auto newCurrentRotation = glm::mat4(1.0);
 
-    auto cameraPos = glm::vec3(0, 0, -1);
+    auto cameraPos = glm::vec3(30, 0, -30);
 
     auto start = std::chrono::system_clock::now();
 
@@ -561,8 +603,6 @@ int main(int, char **)
         glViewport(0, 0, display_w, display_h);
 
         // Fill background with solid color
-        glClearColor(0.0f, 1.0f, 0.0f, 1.00f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         // Gui start new frame
         ImGui_ImplOpenGL3_NewFrame();
@@ -572,8 +612,12 @@ int main(int, char **)
         // GUI
         ImGui::Begin("Settings");
 
-        static float landHeight;
-        ImGui::SliderFloat("land height", &landHeight, -50, -15);
+        static float waterTileSize = 100;
+        ImGui::SliderFloat("water tile", &waterTileSize, 10, 1000);
+        static float dudvStrength = 0.01;
+        ImGui::SliderFloat("dudv strength", &dudvStrength, 0.001, 0.2);
+        static float waterSpeed = 0.25;
+        ImGui::SliderFloat("water speed", &waterSpeed, 0.001, 1);
 
         ImVec2 delta = ImGui::GetMouseDragDelta();
         ImGui::ResetMouseDragDelta();
@@ -586,13 +630,12 @@ int main(int, char **)
 
         auto rotationX = glm::rotate(glm::mat4(1.0), glm::radians(x_rotation * 60), glm::vec3(1, 0, 0));
         auto rotationY = glm::rotate(glm::mat4(1.0), glm::radians(y_rotation * 60), glm::vec3(0, 1, 0));
-        auto rotated = current_rotation * rotationX * rotationY;
+        auto rotated = currentRotation * rotationX * rotationY;
 
-        current_rotation = rotated;
+        currentRotation = rotated;
 
         auto viewVector = glm::vec3(rotated * glm::vec4(0, 0 , 1, 1));
         cameraPos += viewVector * float(1) * mouse_wheel;
-        //std::cerr << cameraPos.x << ' ' << cameraPos.y << ' ' << cameraPos.z << std::endl;
         auto objectModel = glm::mat4(1.0f);
         auto objectView = glm::lookAt<float>(
                 cameraPos,
@@ -602,13 +645,6 @@ int main(int, char **)
         auto objectVP = projection * objectView;
         auto objectMVP = objectVP * objectModel;
 
-//      for (int i = 0; i < vertices.size(); i += 6) {
-//          auto point = glm::vec4(vertices[i], vertices[i + 1], vertices[i + 2], 1.0);
-//          auto res = vp * objectModel * point;
-//          std::cerr << res.x << ' ' << res.y << ' ' << res.z << ' ' << res.w << std::endl;
-//      }
-
-      //std::cerr << cameraPos.x << ' ' << cameraPos.y << ' ' << cameraPos.z << std::endl;
         glDepthFunc(GL_LESS);
         auto end = std::chrono::system_clock::now();
         double elapsedTime = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() * 1e-4;
@@ -616,7 +652,7 @@ int main(int, char **)
         auto circleRadius = std::max(landscapeMaxX, landscapeMaxZ) / 2 * sqrt(2) + 20;
         auto startX = circleRadius * sin(elapsedTime) + landscapeMaxX / 2;
         auto startZ = circleRadius * cos(elapsedTime) + landscapeMaxZ / 2;
-        auto boatMVP = objectVP *
+        auto boatModel =
                 glm::mat4x4(
                         1, 0, 0, 0,
                         0, 1, 0, 0,
@@ -625,15 +661,120 @@ int main(int, char **)
                 ) *
                 objectModel *
                 glm::rotate(glm::mat4(1.0), float(elapsedTime + M_PI / 2), glm::vec3(0, 1, 0));
-        boat.render(boatShader, boatMVP);
-        lighthouse.render(lighthouseShader, objectMVP);
+
+        auto boatMVP = objectVP * boatModel;
 
         auto landscapeModel = glm::mat4x4(
-            1, 0, 0, 0,
-            0, 1, 0, 0,
-            0, 0, 1, 0,
-            0, -20, 0, 1
+                1, 0, 0, 0,
+                0, 1, 0, 0,
+                0, 0, 1, 0,
+                0, -25, 0, 1
         ) * objectModel;
+
+        auto cubemapView = glm::mat4(glm::mat3(objectView));
+        auto cubemapVP = projection * cubemapView;
+        GLuint reflectionTexture;
+        { // draw to reflect buffer
+            glBindFramebuffer(GL_FRAMEBUFFER, reflectBuffer);
+
+            unsigned int rbo;
+            glGenRenderbuffers(1, &rbo);
+            glBindRenderbuffer(GL_RENDERBUFFER, rbo);
+            glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, display_w, display_h);
+            glBindRenderbuffer(GL_RENDERBUFFER, 0);
+            glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, rbo);
+
+            initReflectTexture(reflectionTexture, display_w, display_h);
+            glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            glEnable(GL_DEPTH_TEST);
+
+            auto newCameraPos = cameraPos;
+            newCameraPos.y = -20.0 - (newCameraPos.y + 20.0);
+
+            auto newRotationX = glm::rotate(glm::mat4(1.0), glm::radians(-x_rotation * 60), glm::vec3(1, 0, 0));
+            auto newRotationY = glm::rotate(glm::mat4(1.0), glm::radians(y_rotation * 60), glm::vec3(0, 1, 0));
+            auto newRotated = newCurrentRotation * newRotationX * newRotationY;
+            newCurrentRotation = newRotated;
+
+            auto newViewVector = glm::vec3(newRotated * glm::vec4(0, 0 , 1, 1));
+
+            auto newView = glm::lookAt<float>(
+                    newCameraPos,
+                    newCameraPos + newViewVector,
+                    glm::vec3(newRotated * glm::vec4(0, -1 , 0, 1)));
+
+            auto waterPlane = glm::vec4(0, -1, 0, -20);
+            auto cameraSpaceWaterPlane = glm::inverse(glm::transpose(newView)) * waterPlane;
+            if (cameraSpaceWaterPlane.w > 0) {
+                cameraSpaceWaterPlane *= -1;
+            }
+//            std::cerr << "new view\n";
+//            for (int i = 0; i < 4; ++i) {
+//                for (int j = 0; j < 4; ++j) {
+//                    std::cerr << newView[i][j] << ' ';
+//                }
+//                std::cerr << '\n';
+//            }
+//            std::cerr << "HI " << cameraSpaceWaterPlane.x << ' ' << cameraSpaceWaterPlane.y << ' ' << cameraSpaceWaterPlane.z << ' ' << cameraSpaceWaterPlane.w << std::endl;
+            auto newProjection = projection;
+
+//            std::cerr << "OLD PROJECTION\n";
+//            for (int i = 0; i < 4; ++i) {
+//                for (int j = 0; j < 4; ++j) {
+//                    std::cerr << projection[i][j] << ' ';
+//                }
+//                std::cerr << '\n';
+//            }
+
+            auto cPrime = glm::transpose(glm::inverse(newProjection)) * cameraSpaceWaterPlane;
+//            std::cerr << "cprime " << cPrime.x << ' ' << cPrime.y << ' ' << cPrime.z << ' ' << cPrime.w << std::endl;
+            auto qPrime = glm::vec4(sign(cPrime.x), sign(cPrime.y), 1.0, 1.0);
+            auto Q = glm::inverse(newProjection) * qPrime;
+            newProjection = glm::transpose(newProjection);
+            newProjection[2] = -float(2.0) * Q.z / glm::dot(Q, cameraSpaceWaterPlane) * cameraSpaceWaterPlane +
+                    glm::vec4(0.0, 0.0, 1.0, 0.0);
+
+            newProjection = glm::transpose(newProjection);
+
+//            std::cerr << "NEW PROJECTION\n";
+//            for (int i = 0; i < 4; ++i) {
+//                for (int j = 0; j < 4; ++j) {
+//                    std::cerr << newProjection[i][j] << ' ';
+//                }
+//                std::cerr << '\n';
+//            }
+
+            if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+                std::cout << "ERROR::FRAMEBUFFER:: Framebuffer is not complete!" << std::endl;
+            }
+
+            boat.render(boatShader, newProjection * newView * boatModel);
+            lighthouse.render(lighthouseShader, newProjection * newView * objectModel);
+            landscape.render(landscapeShader, landscapeModel, newProjection * newView);
+            auto newCubemapView = glm::mat4(glm::mat3(newView));
+            auto newCubemapVP = newProjection * newCubemapView;
+
+            glDepthFunc(GL_LEQUAL);
+
+            cubemapShader.use();
+            cubemapShader.set_uniform("vp", glm::value_ptr(newCubemapVP));
+            glBindVertexArray(cubemapVAO);
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_CUBE_MAP, cubemapTexture);
+            glDrawArrays(GL_TRIANGLES, 0, 36);
+            glBindVertexArray(0);
+            glDepthFunc(GL_LESS);
+
+            glDeleteRenderbuffers(1, &rbo);
+        }
+
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glClearColor(0.0f, 1.0f, 0.0f, 1.00f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+        boat.render(boatShader, boatMVP);
+        lighthouse.render(lighthouseShader, objectMVP);
         landscape.render(landscapeShader, landscapeModel, objectVP);
 
         glDepthFunc(GL_LEQUAL);
@@ -641,17 +782,21 @@ int main(int, char **)
         waterShader.set_uniform("cameraPos", cameraPos.x, cameraPos.y, cameraPos.z);
         waterShader.set_uniform("model", glm::value_ptr(objectModel));
         waterShader.set_uniform("vp", glm::value_ptr(objectVP));
-        waterShader.set_uniform("cubemap", 0);
+        waterShader.set_uniform("reflection", 0);
+        waterShader.set_uniform("dudv", 1);
+        waterShader.set_uniform("time", (float) elapsedTime);
+        waterShader.set_uniform("waterSpeed", waterSpeed);
+        waterShader.set_uniform("tileSize", waterTileSize);
+        waterShader.set_uniform("dudvStrength", dudvStrength);
         glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_CUBE_MAP, cubemapTexture);
+        glBindTexture(GL_TEXTURE_2D, reflectionTexture);
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, waterDuDv);
         glBindVertexArray(waterVAO);
-        glDrawElements(GL_TRIANGLES, 18, GL_UNSIGNED_INT, nullptr);
+        glDrawElements(GL_TRIANGLES, 12, GL_UNSIGNED_INT, nullptr);
         glBindVertexArray(0);
 
         glDepthFunc(GL_LEQUAL);
-
-        auto cubemapView = glm::mat4(glm::mat3(objectView));
-        auto cubemapVP = projection * cubemapView;
 
         // Cubemap render
         cubemapShader.use();
@@ -671,6 +816,8 @@ int main(int, char **)
 
         // Swap the backbuffer with the frontbuffer that is used for screen display
         glfwSwapBuffers(window);
+
+        glDeleteTextures(1, &reflectionTexture);
     }
 
     // Cleanup
