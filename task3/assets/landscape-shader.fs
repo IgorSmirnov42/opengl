@@ -2,11 +2,31 @@
 
 in vec3 Position;
 in vec3 Normal;
+in vec4 SunSpaceCoords;
 
+struct Light {
+    vec3 ambient;
+    vec3 diffuse;
+    vec3 specular;
+};
+
+uniform Light light;
 uniform sampler2D lowTexture;
 uniform sampler2D middleTexture;
 uniform sampler2D highTexture;
+uniform sampler2D shadowMap;
 uniform vec3 heights;
+uniform vec3 sunlight;
+uniform float ambientStrength;
+
+float shadow(vec4 coords)
+{
+    vec3 position = coords.xyz / coords.w * 0.5 + 0.5;
+    float dep = texture(shadowMap, position.xy).r;
+    float sh = (position.z - 0.005) > dep ? 1.0 : 0.0;
+    return sh;
+    //return 0.0;
+}
 
 void main()
 {
@@ -19,6 +39,14 @@ void main()
     vec4 highColor = vec4(texture(highTexture, texCoords).rgb, 1.0);
     float alphaA = min((height - heights.x) / (heights.y - heights.x), 1);
     float alphaB = max((height - heights.y) / (heights.z - heights.y), 0);
-    vec4 result = mix(mix(lowColor, middleColor, alphaA), highColor, alphaB);
-    gl_FragColor = result;
+
+    vec4 col = mix(mix(lowColor, middleColor, alphaA), highColor, alphaB);
+
+    vec4 ambient = vec4(light.ambient, 1.0) * (ambientStrength * col);
+    float diff = max(dot(normalize(Normal), normalize(sunlight)), 0.0);
+    vec4 diffuse = vec4(light.diffuse, 1.0) * (diff * col);
+    float sh = shadow(SunSpaceCoords);
+
+    gl_FragColor = ambient + (1 - sh) * diffuse;
+    //gl_FragColor = vec4(Normal, 1.0);
 }

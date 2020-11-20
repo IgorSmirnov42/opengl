@@ -2,14 +2,24 @@
 
 in vec4 Position;
 in vec4 ClipCoords;
+in vec4 SunSpaceCoords;
 
 uniform sampler2D reflection;
+uniform sampler2D shadowMap;
 uniform vec3 cameraPos;
 uniform sampler2D dudv;
 uniform float time;
 uniform float waterSpeed;
 uniform float tileSize;
 uniform float dudvStrength;
+
+float shadow(vec4 coords)
+{
+    vec3 position = coords.xyz / coords.w * 0.5 + 0.5;
+    float dep = texture(shadowMap, clamp(position.xy, 0.001, 0.999)).r;
+    float sh = (position.z - 0.005) > dep ? 0.5 : 0.0;
+    return sh;
+}
 
 void main()
 {
@@ -23,5 +33,7 @@ void main()
     texCoords = mod(mod(texCoords, 1.0) + 1.0, 1.0);
     texCoords += bumpMap;
     texCoords = clamp(texCoords, 0.001, 0.999);
-    gl_FragColor = vec4(texture(reflection, texCoords).rgb, 1.0);
+    //gl_FragColor = vec4(dep, dep, dep, 1.0);
+    vec4 waterColor = vec4(texture(reflection, texCoords).rgb, 1.0);
+    gl_FragColor = waterColor;
 }
