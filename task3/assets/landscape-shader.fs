@@ -3,6 +3,7 @@
 in vec3 Position;
 in vec3 Normal;
 in vec4 SunSpaceCoords;
+in vec4 ProjectorSpaceCoords;
 
 struct Light {
     vec3 ambient;
@@ -18,6 +19,8 @@ uniform sampler2D shadowMap;
 uniform vec3 heights;
 uniform vec3 sunlight;
 uniform float ambientStrength;
+uniform sampler2D projectorTexture;
+uniform sampler2D projectorDepthMap;
 
 float shadow(vec4 coords)
 {
@@ -25,7 +28,6 @@ float shadow(vec4 coords)
     float dep = texture(shadowMap, position.xy).r;
     float sh = (position.z - 0.005) > dep ? 1.0 : 0.0;
     return sh;
-    //return 0.0;
 }
 
 void main()
@@ -47,6 +49,24 @@ void main()
     vec4 diffuse = vec4(light.diffuse, 1.0) * (diff * col);
     float sh = shadow(SunSpaceCoords);
 
-    gl_FragColor = ambient + (1 - sh) * diffuse;
+    vec4 color = ambient + (1 - sh) * diffuse;
+
+    vec3 projectorSpacePos;
+    if (abs(ProjectorSpaceCoords.w) > 1e-3)
+    {
+        projectorSpacePos = ProjectorSpaceCoords.xyz / ProjectorSpaceCoords.w * 0.5 + 0.5;
+    }
+    else
+    {
+       projectorSpacePos = vec3(0, 0, 0);
+    }
+    float projectorDepth = texture(projectorDepthMap, clamp(projectorSpacePos.xy, 0.001, 0.999)).r;
+    float myDepth = projectorSpacePos.z;
+    float us = (abs(myDepth - projectorDepth) < 0.001 &&
+                clamp(projectorSpacePos.xy, 0.001, 0.999) == projectorSpacePos.xy &&
+                length(projectorSpacePos.xy - vec2(0.5)) < 0.5 * 0.8) ? 0.0 : 1.0;
+    vec4 projectorTex = vec4(texture(projectorTexture, clamp(projectorSpacePos.xy, 0.001, 0.999)).rgb, 1.0);
+
+    gl_FragColor = color * us + (1 - us) * projectorTex;
     //gl_FragColor = vec4(Normal, 1.0);
 }
