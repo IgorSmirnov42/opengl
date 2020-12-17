@@ -89,7 +89,7 @@ void create_cubemap(GLuint &vbo, GLuint &vao)
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), nullptr);
 }
 
-void create_water(GLuint &vbo, GLuint &vao, GLuint &ebo, float landscapeMaxX, float landscapeMaxZ)
+void create_water(GLuint &vbo, GLuint &vao, GLuint &ebo)
 {
     float vertices[] = {
         0, -20, 0, 1,
@@ -97,7 +97,6 @@ void create_water(GLuint &vbo, GLuint &vao, GLuint &ebo, float landscapeMaxX, fl
         0, 0, 1, 0,
         -1, 0, 0, 0,
         0, 0, -1, 0,
-        landscapeMaxX, -20, landscapeMaxZ, 1,
     };
     uint triangles[] = {
         0, 2, 3,
@@ -180,34 +179,15 @@ struct RenderingObject {
 struct Object {
     std::vector<RenderingObject> objects;
 
-    void render(shader_t &shader, glm::mat4 model, glm::mat4 mvp, glm::vec3 sunlight,
-                glm::vec3 lightAmbient, glm::vec3 lightDiffuse, glm::vec3 lightSpecular,
-                float ambientStrength, glm::mat4 lightVP, GLuint shadowMap,
-                glm::mat4 projectVP, GLuint projectorTexture, GLuint projectorDepthMap) {
+    void render(shader_t &shader, glm::mat4 model, glm::mat4 mvp) {
         for (const auto &object : objects) {
             shader.use();
-            shader.set_uniform("sunVP", glm::value_ptr(lightVP));
             shader.set_uniform("mvp", glm::value_ptr(mvp));
             shader.set_uniform("model", glm::value_ptr(model));
             shader.set_uniform("tex", 0);
-            shader.set_uniform("shadowMap", 1);
-            shader.set_uniform("ambientStrength", ambientStrength);
-            shader.set_uniform("sunlight", sunlight.x, sunlight.y, sunlight.z);
-            shader.set_uniform("light.ambient", lightAmbient.r, lightAmbient.g, lightAmbient.b);
-            shader.set_uniform("light.diffuse", lightDiffuse.r, lightDiffuse.g, lightDiffuse.b);
-            shader.set_uniform("light.specular", lightSpecular.r, lightSpecular.g, lightSpecular.b);
-            shader.set_uniform("projectVP", glm::value_ptr(projectVP));
-            shader.set_uniform("projectorTexture", 2);
-            shader.set_uniform("projectorDepthMap", 3);
             glBindVertexArray(object.vao);
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, object.texture);
-            glActiveTexture(GL_TEXTURE1);
-            glBindTexture(GL_TEXTURE_2D, shadowMap);
-            glActiveTexture(GL_TEXTURE2);
-            glBindTexture(GL_TEXTURE_2D, projectorTexture);
-            glActiveTexture(GL_TEXTURE3);
-            glBindTexture(GL_TEXTURE_2D, projectorDepthMap);
             glDrawArrays(GL_TRIANGLES, 0, object.trianglesN * 3);
             glBindVertexArray(0);
         }
@@ -360,187 +340,6 @@ Object load_object_with_materials(const std::string &base_path, const std::strin
     return Object{objects};
 }
 
-struct Landscape {
-    GLuint vao = 0;
-    GLuint vbo = 0;
-    GLuint ebo = 0;
-    uint trianglesN = 0;
-    std::vector<GLuint> tileTextures;
-    glm::vec3 heights = glm::vec3(0.0);
-
-    void render(shader_t &shader, glm::mat4 model, glm::mat4 vp, glm::vec3 sunlight,
-                glm::vec3 lightAmbient, glm::vec3 lightDiffuse, glm::vec3 lightSpecular,
-                float ambientStrength, glm::mat4 lightVP, GLuint shadowMap,
-                glm::mat4 projectVP, GLuint projectorTexture, GLuint projectorDepthMap) {
-        shader.use();
-        shader.set_uniform("sunVP", glm::value_ptr(lightVP));
-        shader.set_uniform("model", glm::value_ptr(model));
-        shader.set_uniform("vp", glm::value_ptr(vp));
-        shader.set_uniform("lowTexture", 0);
-        shader.set_uniform("middleTexture", 1);
-        shader.set_uniform("highTexture", 2);
-        shader.set_uniform("shadowMap", 3);
-        shader.set_uniform("heights", heights.x, heights.y, heights.z);
-        shader.set_uniform("sunlight", sunlight.r, sunlight.g, sunlight.b);
-        shader.set_uniform("light.ambient", lightAmbient.r, lightAmbient.g, lightAmbient.b);
-        shader.set_uniform("light.diffuse", lightDiffuse.r, lightDiffuse.g, lightDiffuse.b);
-        shader.set_uniform("light.specular", lightSpecular.r, lightSpecular.g, lightSpecular.b);
-        shader.set_uniform("ambientStrength", ambientStrength);
-        shader.set_uniform("projectVP", glm::value_ptr(projectVP));
-        shader.set_uniform("projectorTexture", 4);
-        shader.set_uniform("projectorDepthMap", 5);
-        glBindVertexArray(vao);
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, tileTextures[0]);
-        glActiveTexture(GL_TEXTURE1);
-        glBindTexture(GL_TEXTURE_2D, tileTextures[1]);
-        glActiveTexture(GL_TEXTURE2);
-        glBindTexture(GL_TEXTURE_2D, tileTextures[2]);
-        glActiveTexture(GL_TEXTURE3);
-        glBindTexture(GL_TEXTURE_2D, shadowMap);
-        glActiveTexture(GL_TEXTURE4);
-        glBindTexture(GL_TEXTURE_2D, projectorTexture);
-        glActiveTexture(GL_TEXTURE5);
-        glBindTexture(GL_TEXTURE_2D, projectorDepthMap);
-        glDrawElements(GL_TRIANGLES, trianglesN * 3, GL_UNSIGNED_INT, nullptr);
-        glBindVertexArray(0);
-    }
-
-    void stupidRender(shader_t &shader, glm::mat4 mvp) const {
-        shader.use();
-        shader.set_uniform("mvp", glm::value_ptr(mvp));
-        glBindVertexArray(vao);
-        glDrawElements(GL_TRIANGLES, trianglesN * 3, GL_UNSIGNED_INT, nullptr);
-        glBindVertexArray(0);
-    }
-};
-
-struct TileInfo {
-    std::string filename;
-};
-
-std::vector<std::vector<std::vector<unsigned char>>> addBorders(const unsigned char * map, int height, int width,
-                                                                const std::vector<unsigned char>& border) {
-    std::vector<std::vector<std::vector<unsigned char>>> result;
-    result.resize(height + 2);
-    for (int h = 0; h < height + 2; ++h) {
-        result[h].resize(width + 2, border);
-    }
-    for (int h = 0; h < height; ++h) {
-        for (int w = 0; w < width; ++w) {
-            int i = (h * width + w) * 4;
-            result[h + 1][w + 1] = {map[i], map[i + 1], map[i + 2]};
-        }
-    }
-    return result;
-}
-
-Landscape load_landscape(const std::string &heightmapFolderPath,
-                         const std::vector<TileInfo> &tiles,
-                         float pixelLength,
-                         glm::vec3 heights,
-                         float maxHeight,
-                         float &maxX,
-                         float &maxZ,
-                         float lighthouseX,
-                         float lighthouseZ,
-                         float &lighthouseY) {
-    static const std::string HEIGHT_MAP_FILEMANE = "hm.png";
-    static const std::string HEIGHT_MAP_NORMALS_FILEMANE = "nm.png";
-    int heightMapWidth, heightMapHeight, nrChannels;
-    unsigned char *heightMapWithoutBorders = stbi_load((heightmapFolderPath + HEIGHT_MAP_FILEMANE).c_str(), &heightMapWidth, &heightMapHeight, &nrChannels, 0);
-    std::vector<std::vector<std::vector<unsigned char>>> heightMap = addBorders(heightMapWithoutBorders,
-                                                                                 heightMapHeight,
-                                                                                 heightMapWidth,
-                                                                                 std::vector<unsigned char>{0, 0, 0});
-    stbi_image_free(heightMapWithoutBorders);
-    heightMapHeight += 2;
-    heightMapWidth += 2;
-    maxX = float(heightMapHeight - 1) * pixelLength;
-    maxZ = float(heightMapWidth - 1) * pixelLength;
-    int normalMapHeight, normalMapWidth;
-    unsigned char *normalMapWithoutBorders = stbi_load((heightmapFolderPath + HEIGHT_MAP_NORMALS_FILEMANE).c_str(),
-                                                &normalMapWidth, &normalMapHeight, &nrChannels, 0);
-    std::vector<std::vector<std::vector<unsigned char>>> normalMap = addBorders(normalMapWithoutBorders,
-                                                                                 normalMapHeight,
-                                                                                 normalMapWidth,
-                                                                                 std::vector<unsigned char>{0, 0, 1});
-    normalMapHeight += 2;
-    normalMapWidth += 2;
-    stbi_image_free(normalMapWithoutBorders);
-    std::vector<float> array;
-    //assert(nrChannels == 4);
-    lighthouseY = 0;
-
-    for (int h = 0; h < heightMapHeight; ++h) {
-        for (int w = 0; w < heightMapWidth; ++w) {
-            unsigned short r = heightMap[h][w][0];
-            float curHeight = float(r) / 255 * maxHeight;
-            float x = (float) normalMap[h][w][0] / 255.0f;
-            float y = (float) normalMap[h][w][1] / 255.0f;
-            float z = (float) normalMap[h][w][2] / 255.0f;
-            x = x * 2 - 1;
-            y = y * 2 - 1;
-            z = z * 2 - 1;
-            glm::vec3 normal = glm::normalize(glm::vec3(x, z, y));
-            glm::vec3 coords = glm::vec3((float) h * pixelLength, curHeight, (float) w * pixelLength);
-            if ((float) (h - 1) * pixelLength <= lighthouseX && lighthouseX <= (float) h * pixelLength &&
-                    (float) (w - 1) * pixelLength <= lighthouseZ && lighthouseZ <= (float) w * pixelLength) {
-                lighthouseY = curHeight;
-            }
-            array.push_back(coords.x);
-            array.push_back(coords.y);
-            array.push_back(coords.z);
-            array.push_back(normal.x);
-            array.push_back(normal.y);
-            array.push_back(normal.z);
-        }
-    }
-
-    std::vector<uint> triangles;
-    for (int h = 0; h + 1 < heightMapHeight; ++h) {
-        for (int w = 0; w + 1 < heightMapWidth; ++w) {
-            uint a = h * heightMapWidth + w;
-            uint b = a + 1;
-            uint c = a + heightMapWidth;
-            uint d = c + 1;
-            triangles.push_back(c);
-            triangles.push_back(a);
-            triangles.push_back(b);
-            triangles.push_back(c);
-            triangles.push_back(b);
-            triangles.push_back(d);
-        }
-    }
-
-    Landscape object;
-    object.heights = heights;
-    object.heights -= glm::vec3(25);
-    object.trianglesN = triangles.size() / 3;
-    glGenVertexArrays(1, &object.vao);
-    glGenBuffers(1, &object.vbo);
-    glGenBuffers(1, &object.ebo);
-    glBindVertexArray(object.vao);
-    glBindBuffer(GL_ARRAY_BUFFER, object.vbo);
-    glBufferData(GL_ARRAY_BUFFER, array.size() * sizeof(float), &array[0], GL_STATIC_DRAW);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, object.ebo);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, triangles.size() * sizeof(unsigned int), &triangles[0], GL_STATIC_DRAW);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void *) nullptr);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void *) (3 * sizeof(float)));
-    glEnableVertexAttribArray(1);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glBindVertexArray(0);
-
-    object.tileTextures = {
-        load_texture(heightmapFolderPath + tiles[0].filename),
-        load_texture(heightmapFolderPath + tiles[1].filename),
-        load_texture(heightmapFolderPath + tiles[2].filename)
-    };
-
-    return object;
-}
-
 void initReflectTexture(GLuint &texColorBuffer, int width, int height) {
     glGenTextures(1, &texColorBuffer);
     glBindTexture(GL_TEXTURE_2D, texColorBuffer);
@@ -624,37 +423,10 @@ int main(int, char **)
 
     GLuint cubemapTexture = load_cubemap("../Teide");
 
-    glm::vec3 heights = glm::vec3(0.0, 8.0, 30.0);
-    std::vector<TileInfo> tileInfos;
-    tileInfos.push_back({"SandWhite.jpg"});
-    tileInfos.push_back({"SandBlack.jpg"});
-    tileInfos.push_back({"Rock.jpg"});
-    float landscapeMaxX, landscapeMaxZ;
-    float lighthouseX = 20, lighthouseY, lighthouseZ = 20;
-    Landscape landscape = load_landscape(
-            "../obj/heightmap/",
-            tileInfos,
-            0.1,
-            heights,
-            heights.z,
-            landscapeMaxX,
-            landscapeMaxZ,
-            lighthouseX,
-            lighthouseZ,
-            lighthouseY);
-
-    lighthouseY -= 25;
-
-    auto lighthouse = load_object_with_materials(
-            "../obj/lighthouse/",
-            "lighthouse.obj",
-            1,
-            lighthouseX, lighthouseZ, lighthouseY);
 
     GLuint waterVBO, waterVAO, waterEBO;
-    create_water(waterVBO, waterVAO, waterEBO, landscapeMaxX, landscapeMaxZ);
+    create_water(waterVBO, waterVAO, waterEBO);
     GLuint waterDuDv = load_texture("../obj/water/dudv.png");
-    GLuint catTexture = load_texture("../obj/tex/cat.jpg");
 
     GLuint reflectBuffer;
     glGenFramebuffers(1, &reflectBuffer);
@@ -664,9 +436,7 @@ int main(int, char **)
     shader_t boatShader("boat-shader.vs", "boat-shader.fs");
     shader_t objectPreshader("object-preshader.vs", "object-preshader.fs");
     shader_t waterPreshader("water-preshader.vs", "object-preshader.fs");
-    shader_t lighthouseShader("lighthouse-shader.vs", "lighthouse-shader.fs");
     shader_t waterShader("water-shader.vs", "water-shader.fs");
-    shader_t landscapeShader("landscape-shader.vs", "landscape-shader.fs");
 
     // Setup GUI context
     IMGUI_CHECKVERSION();
@@ -713,30 +483,6 @@ int main(int, char **)
         ImGui::SliderFloat("dudv strength", &dudvStrength, 0.001, 0.2);
         static float waterSpeed = 0.25;
         ImGui::SliderFloat("water speed", &waterSpeed, 0.001, 1);
-        static float sunlightX = -1.0;
-        ImGui::SliderFloat("Sunlight x", &sunlightX, -1, 1);
-        static float sunlightY = 1.0;
-        ImGui::SliderFloat("Sunlight y", &sunlightY, 0.001, 1);
-        static float sunlightZ = -1.0;
-        ImGui::SliderFloat("Sunlight z", &sunlightZ, -1, 1);
-        static float lightAmbient[3] = {0.7, 0.7, 0.7};
-        ImGui::ColorEdit3("Light ambient", lightAmbient);
-        static float lightDiffuse[3] = {0.9, 0.9, 0.8};
-        ImGui::ColorEdit3("Light diffuse", lightDiffuse);
-        static float lightSpecular[3] = {1, 1, 1};
-        //ImGui::ColorEdit3("Light specular", lightSpecular);
-        static float landscapeAmbientStrength = 0.1;
-        ImGui::SliderFloat("Landscape ambient strength", &landscapeAmbientStrength, 0.0, 0.5);
-        static float boatAmbientStrength = 0.25;
-        ImGui::SliderFloat("Boat ambient strength", &boatAmbientStrength, 0.0, 0.5);
-        static float lighthouseAmbientStrength = 0.25;
-        ImGui::SliderFloat("Lighthouse ambient strength", &lighthouseAmbientStrength, 0.0, 0.5);
-        static float projectRadius = 5;
-        ImGui::SliderFloat("Project radius", &projectRadius, 2.0, 20.0);
-        static float lighthouseProjectionDegree = 20;
-        ImGui::SliderFloat("Lighthouse projection degree", &lighthouseProjectionDegree, 1, 45);
-        static float projectorHeight = 5;
-        ImGui::SliderFloat("Projector height", &projectorHeight, -20, 45);
 
 
         ImVec2 delta = ImGui::GetMouseDragDelta();
@@ -751,11 +497,6 @@ int main(int, char **)
         float mouse_wheel = io.MouseWheel;
 
         ImGui::End();
-
-        auto sunlight = glm::vec3(sunlightX, sunlightY, sunlightZ);
-        auto sunlightAmbient = glm::vec3(lightAmbient[0], lightAmbient[1], lightAmbient[2]);
-        auto sunlightDiffuse = glm::vec3(lightDiffuse[0], lightDiffuse[1], lightDiffuse[2]);
-        auto sunlightSpecular = glm::vec3(lightSpecular[0], lightSpecular[1], lightSpecular[2]);
         //auto landscapeAmbientColor = glm::vec3(landscapeAmbient[0], landscapeAmbient[1], landscapeAmbient[2]);
 
         auto rotationX = glm::rotate(glm::mat4(1.0), glm::radians(x_rotation * 60), glm::vec3(1, 0, 0));
@@ -773,15 +514,14 @@ int main(int, char **)
                 glm::vec3(glm::vec4(0, 1 , 0, 1)));
         auto projection = glm::perspective<float>(glm::radians(45.0f), float(display_w) / float(display_h), 0.001, 10000);
         auto objectVP = projection * objectView;
-        auto objectMVP = objectVP * objectModel;
 
         glDepthFunc(GL_LESS);
         auto end = std::chrono::system_clock::now();
         double elapsedTime = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() * 1e-4;
 
-        auto circleRadius = std::max(landscapeMaxX, landscapeMaxZ) / 2 * sqrt(2) + boatRadius;
-        auto startX = circleRadius * sin(elapsedTime) + landscapeMaxX / 2;
-        auto startZ = circleRadius * cos(elapsedTime) + landscapeMaxZ / 2;
+        auto circleRadius = boatRadius;
+        auto startX = circleRadius * sin(elapsedTime);
+        auto startZ = circleRadius * cos(elapsedTime);
         auto boatModel =
                 glm::mat4x4(
                         1, 0, 0, 0,
@@ -794,78 +534,15 @@ int main(int, char **)
 
         auto boatMVP = objectVP * boatModel;
 
-        auto landscapeModel = glm::mat4x4(
-                1, 0, 0, 0,
-                0, 1, 0, 0,
-                0, 0, 1, 0,
-                0, -25, 0, 1
-        ) * objectModel;
-
         auto cubemapView = glm::mat4(glm::mat3(objectView));
         auto cubemapVP = projection * cubemapView;
-
-        auto projectorX = projectRadius * sin(elapsedTime) + lighthouseX;
-        auto projectorZ = projectRadius * cos(elapsedTime) + lighthouseZ;
-        auto projectorCoords = glm::vec3(lighthouseX, projectorHeight, lighthouseZ);
-        auto projectorPoint = glm::vec3(projectorX, 0.0f, projectorZ);
-        auto projectProjection = glm::perspective<float>(glm::radians(lighthouseProjectionDegree), 1.0, 1, 1000);
-        auto projectView = glm::lookAt(projectorCoords,
-                                     projectorPoint,
-                                     glm::vec3(0, 1, 0));
-        auto projectVP = projectProjection * projectView;
-        auto projectorDir = projectorPoint - projectorCoords;
 
 //        std::cerr << "Projection\n";
 //        for (int i = 0; i < 4; ++i) {
 //            std::cerr << projectVP[i].x << ' ' << projectVP[i].y << ' ' << projectVP[i].z << ' ' << projectVP[i].w << '\n';
 //        }
 
-        { // lighthouse projection
-            glViewport(0, 0, SHADOW_WIDTH, SHADOW_HEIGHT);
-            glBindFramebuffer(GL_FRAMEBUFFER, lighthouseProjectionFBO);
-            glClear(GL_DEPTH_BUFFER_BIT);
-            glEnable(GL_DEPTH_TEST);
 
-            if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-                std::cout << "ERROR::FRAMEBUFFER:: Framebuffer is not complete!" << std::endl;
-            }
-
-            boat.stupidRender(objectPreshader, projectVP * boatModel);
-            lighthouse.stupidRender(objectPreshader, projectVP * objectModel);
-            landscape.stupidRender(objectPreshader, projectVP * landscapeModel);
-
-            auto mvp = projectVP * objectModel;
-            waterPreshader.use();
-            waterPreshader.set_uniform("mvp", glm::value_ptr(mvp));
-            glBindVertexArray(waterVAO);
-            glDrawElements(GL_TRIANGLES, 12, GL_UNSIGNED_INT, nullptr);
-            glBindVertexArray(0);
-
-            glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        }
-
-        auto lightProjection = glm::ortho(-100.0f, 100.0f, -100.0f, 100.0f, 1.0f, 800.0f);
-        auto lightView = glm::lookAt(sunlight / sunlight.y * 50.0f,
-                                   glm::vec3(0.0f, 0.0f,  0.0f),
-                                   glm::vec3(0, 1, 0));
-
-        auto lightVP = lightProjection * lightView;
-
-        { // Shadow maps
-            glViewport(0, 0, SHADOW_WIDTH, SHADOW_HEIGHT);
-            glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
-            glClear(GL_DEPTH_BUFFER_BIT);
-            glEnable(GL_DEPTH_TEST);
-
-            if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-                std::cout << "ERROR::FRAMEBUFFER:: Framebuffer is not complete!" << std::endl;
-            }
-
-            boat.stupidRender(objectPreshader, lightVP * boatModel);
-            lighthouse.stupidRender(objectPreshader, lightVP * objectModel);
-            landscape.stupidRender(objectPreshader, lightVP * landscapeModel);
-            glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        }
         glViewport(0, 0, display_w, display_h);
         GLuint reflectionTexture;
         { // draw to reflect buffer
@@ -918,15 +595,7 @@ int main(int, char **)
                 std::cout << "ERROR::FRAMEBUFFER:: Framebuffer is not complete!" << std::endl;
             }
 
-            boat.render(boatShader, boatModel, newProjection * newView * boatModel, sunlight,
-                        sunlightAmbient, sunlightDiffuse, sunlightSpecular, boatAmbientStrength,
-                        lightVP, depthTexture, projectVP, catTexture, lighthouseProjectionDepthMap);
-            lighthouse.render(lighthouseShader, objectModel, newProjection * newView * objectModel, sunlight,
-                              sunlightAmbient, sunlightDiffuse, sunlightSpecular, lighthouseAmbientStrength,
-                              lightVP, depthTexture, projectVP, catTexture, lighthouseProjectionDepthMap);
-            landscape.render(landscapeShader, landscapeModel, newProjection * newView, sunlight,
-                             sunlightAmbient, sunlightDiffuse, sunlightSpecular, landscapeAmbientStrength,
-                             lightVP, depthTexture, projectVP, catTexture, lighthouseProjectionDepthMap);
+            boat.render(boatShader, boatModel, newProjection * newView * boatModel);
             auto newCubemapView = glm::mat4(glm::mat3(newView));
             auto newCubemapVP = newProjection * newCubemapView;
 
@@ -948,15 +617,7 @@ int main(int, char **)
         glClearColor(0.0f, 1.0f, 0.0f, 1.00f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        boat.render(boatShader, boatModel, boatMVP, sunlight,
-                    sunlightAmbient, sunlightDiffuse, sunlightSpecular, boatAmbientStrength,
-                    lightVP, depthTexture, projectVP, catTexture, lighthouseProjectionDepthMap);
-        lighthouse.render(lighthouseShader, objectModel, objectMVP, sunlight,
-                          sunlightAmbient, sunlightDiffuse, sunlightSpecular, lighthouseAmbientStrength,
-                          lightVP, depthTexture, projectVP, catTexture, lighthouseProjectionDepthMap);
-        landscape.render(landscapeShader, landscapeModel, objectVP, sunlight,
-                         sunlightAmbient, sunlightDiffuse, sunlightSpecular, landscapeAmbientStrength,
-                         lightVP, depthTexture, projectVP, catTexture, lighthouseProjectionDepthMap);
+        boat.render(boatShader, boatModel, boatMVP);
 
         glDepthFunc(GL_LEQUAL);
         waterShader.use();
@@ -965,26 +626,15 @@ int main(int, char **)
         waterShader.set_uniform("vp", glm::value_ptr(objectVP));
         waterShader.set_uniform("reflection", 0);
         waterShader.set_uniform("dudv", 1);
-        waterShader.set_uniform("sunVP", glm::value_ptr(lightVP));
-        waterShader.set_uniform("shadowMap", 2);
         waterShader.set_uniform("time", (float) elapsedTime);
         waterShader.set_uniform("waterSpeed", waterSpeed);
         waterShader.set_uniform("tileSize", waterTileSize);
         waterShader.set_uniform("dudvStrength", dudvStrength);
-        waterShader.set_uniform("projectVP", glm::value_ptr(projectVP));
-        waterShader.set_uniform("projectorDepthMap", 3);
-        waterShader.set_uniform("projectorTexture", 4);
 
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, reflectionTexture);
         glActiveTexture(GL_TEXTURE1);
         glBindTexture(GL_TEXTURE_2D, waterDuDv);
-        glActiveTexture(GL_TEXTURE2);
-        glBindTexture(GL_TEXTURE_2D, depthTexture);
-        glActiveTexture(GL_TEXTURE3);
-        glBindTexture(GL_TEXTURE_2D, lighthouseProjectionDepthMap);
-        glActiveTexture(GL_TEXTURE4);
-        glBindTexture(GL_TEXTURE_2D, catTexture);
         glBindVertexArray(waterVAO);
         glDrawElements(GL_TRIANGLES, 12, GL_UNSIGNED_INT, nullptr);
         glBindVertexArray(0);
