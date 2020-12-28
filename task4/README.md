@@ -1,4 +1,4 @@
-OpenGL app for 3d object loading and rendering
+OpenGL app. Waves from boat implemented with particles
 * 3.3 core profile
 * prereqs - conan, cmake
 * deps - glfw, glew, imgui, glm, tinyobjloader
