@@ -89,23 +89,33 @@ void create_cubemap(GLuint &vbo, GLuint &vao)
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), nullptr);
 }
 
-void create_water(GLuint &vbo, GLuint &vao, GLuint &ebo)
+void create_water(GLuint &vbo, GLuint &vao, GLuint &ebo, float borders)
 {
-    float vertices[] = {
-        0, -20, 0, 1,
-        1,  0, 0, 0,
-        0, 0, 1, 0,
-        -1, 0, 0, 0,
-        0, 0, -1, 0,
-    };
-    uint triangles[] = {
-        0, 2, 3,
-        0, 3, 4,
-        0, 4, 1,
-        0, 1, 2,
+//    float vertices[] = {
+//        0, -20, 0, 1,
+//        1,  0, 0, 0,
+//        0, 0, 1, 0,
+//        -1, 0, 0, 0,
+//        0, 0, -1, 0,
+//    };
+//    uint triangles[] = {
+//        0, 2, 3,
+//        0, 3, 4,
+//        0, 4, 1,
+//        0, 1, 2,
 //        5, 1, 2,
 //        5, 4, 1,
 //        5, 2, 3
+//    };
+    float vertices[] = {
+        -borders, -20, -borders, 1,
+        -borders, -20, borders, 1,
+        borders, -20, borders, 1,
+        borders, -20, -borders, 1,
+    };
+    uint triangles[] = {
+        0, 1, 3,
+        1, 3, 2,
     };
     glGenVertexArrays(1, &vao);
     glGenBuffers(1, &vbo);
@@ -357,24 +367,61 @@ float sign(float x) {
     return 0;
 }
 
-const unsigned int SHADOW_WIDTH = 1024, SHADOW_HEIGHT = 1024;
+const unsigned int WAVES_WIDTH = 4096, WAVES_HEIGHT = 4096;
 
-void generateDepthTexture(GLuint &depthMapFBO, GLuint &depthTexture) {
-    glGenFramebuffers(1, &depthMapFBO);
-    glGenTextures(1, &depthTexture);
-    glBindTexture(GL_TEXTURE_2D, depthTexture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT,
-                 SHADOW_WIDTH, SHADOW_HEIGHT, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+void generateHeightmapTexture(GLuint &heightmapFBO, GLuint &heightmapTexture) {
+    glGenFramebuffers(1, &heightmapFBO);
+    glGenTextures(1, &heightmapTexture);
+    glBindTexture(GL_TEXTURE_2D, heightmapTexture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, WAVES_WIDTH, WAVES_HEIGHT, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthTexture, 0);
-    glDrawBuffer(GL_NONE);
-    glReadBuffer(GL_NONE);
+
+    GLuint depthrenderbuffer;
+    glGenRenderbuffers(1, &depthrenderbuffer);
+    glBindRenderbuffer(GL_RENDERBUFFER, depthrenderbuffer);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, WAVES_WIDTH, WAVES_HEIGHT);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depthrenderbuffer);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, heightmapFBO);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, heightmapFBO, 0);
+    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+   // glReadBuffer(GL_COLOR_ATTACHMENT0);
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+        assert(false);
+    }
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
+
+struct Particle {
+    float x;
+    float y;
+    long time;
+    float metersPerSecond;
+    float lifetime;
+
+    long finishTime() const {
+        return time + (long) (lifetime * 1000) + 1;
+    }
+
+    long mostIntensiveTime() const {
+        return time + (long) (lifetime * 1000 / 2) + 1;
+    }
+
+    float intensity(long currentTime) const {
+        long middle = mostIntensiveTime();
+        if (currentTime > middle) {
+            return (float) (finishTime() - currentTime) / (float) (finishTime() - middle);
+        }
+        else {
+            return (float) (currentTime - time) / (float) (middle - time);
+        }
+    }
+
+    float distance(long currentTime) const {
+        return metersPerSecond / 1000 * (float) (currentTime - time);
+    }
+};
 
 int main(int, char **)
 {
@@ -406,11 +453,8 @@ int main(int, char **)
         return 1;
     }
 
-    GLuint depthMapFBO, depthTexture;
-    generateDepthTexture(depthMapFBO, depthTexture);
-
-    GLuint lighthouseProjectionFBO, lighthouseProjectionDepthMap;
-    generateDepthTexture(lighthouseProjectionFBO, lighthouseProjectionDepthMap);
+    GLuint heightmapFBO, heightmapTexture;
+    generateHeightmapTexture(heightmapFBO, heightmapTexture);
 
     // create our geometries
     GLuint cubemapVBO, cubemapVAO;
@@ -423,9 +467,9 @@ int main(int, char **)
 
     GLuint cubemapTexture = load_cubemap("../Teide");
 
-
+    const float borders = 150.0;
     GLuint waterVBO, waterVAO, waterEBO;
-    create_water(waterVBO, waterVAO, waterEBO);
+    create_water(waterVBO, waterVAO, waterEBO, borders);
     GLuint waterDuDv = load_texture("../obj/water/dudv.png");
 
     GLuint reflectBuffer;
@@ -437,6 +481,7 @@ int main(int, char **)
     shader_t objectPreshader("object-preshader.vs", "object-preshader.fs");
     shader_t waterPreshader("water-preshader.vs", "object-preshader.fs");
     shader_t waterShader("water-shader.vs", "water-shader.fs");
+    shader_t wavesShader("heightmap-shader.vs", "heightmap-shader.fs");
 
     // Setup GUI context
     IMGUI_CHECKVERSION();
@@ -454,6 +499,15 @@ int main(int, char **)
     auto cameraPos = glm::vec3(30, 0, -30);
 
     auto start = std::chrono::system_clock::now();
+
+    std::vector<Particle> activeParticles;
+
+    auto prevTime = start;
+    double perMeterParticles = 0;
+    double perSecondParticles = 0;
+
+    float fps = 0;
+    long msperframe = 0;
 
     while (!glfwWindowShouldClose(window))
     {
@@ -476,14 +530,29 @@ int main(int, char **)
         // GUI
         ImGui::Begin("Settings");
         static float boatRadius = 20;
-        ImGui::SliderFloat("Boat radius", &boatRadius, 5, 30);
-        static float waterTileSize = 100;
-        ImGui::SliderFloat("water tile", &waterTileSize, 10, 1000);
-        static float dudvStrength = 0.01;
-        ImGui::SliderFloat("dudv strength", &dudvStrength, 0.001, 0.2);
-        static float waterSpeed = 0.25;
-        ImGui::SliderFloat("water speed", &waterSpeed, 0.001, 1);
+        ImGui::SliderFloat("Boat radius", &boatRadius, 0, 100);
+        static float particlesPerMeterIntensity = 1;
+        ImGui::SliderFloat("Particles per meter", &particlesPerMeterIntensity, 0, 5);
+        static float particlesPerSecondIntensity = 2;
+        ImGui::SliderFloat("Particles per second", &particlesPerSecondIntensity, 0, 20);
+        static float waveSpeed = 1.5;
+        ImGui::SliderFloat("wave speed (meters per second)", &waveSpeed, 0.5, 20.0);
+        static float waveLifetime = 7.0;
+        ImGui::SliderFloat("Wave lifetime (seconds)", &waveLifetime, 1.0, 20.0);
+        static float particleWidth = -3;
+        ImGui::SliderFloat("Particle width", &particleWidth, -5, -2);
+        static int pomSteps = 20;
+        ImGui::SliderInt("POM steps", &pomSteps, 1, 100);
+        static float waveHeight = 0.15;
+        ImGui::SliderFloat("Wave height", &waveHeight, 0, 0.5);
+        static bool pomOn = true;
+        ImGui::Checkbox("POM on", &pomOn);
+        static bool pomOpt = true;
+        ImGui::Checkbox("POM optimization", &pomOpt);
 
+        ImGui::Text("FPS: %f", fps);
+        ImGui::Text("ms per frame: %ld", msperframe);
+        ImGui::Text("Active particles: %zu", activeParticles.size());
 
         ImVec2 delta = ImGui::GetMouseDragDelta();
         ImGui::ResetMouseDragDelta();
@@ -497,7 +566,6 @@ int main(int, char **)
         float mouse_wheel = io.MouseWheel;
 
         ImGui::End();
-        //auto landscapeAmbientColor = glm::vec3(landscapeAmbient[0], landscapeAmbient[1], landscapeAmbient[2]);
 
         auto rotationX = glm::rotate(glm::mat4(1.0), glm::radians(x_rotation * 60), glm::vec3(1, 0, 0));
         auto rotationY = glm::rotate(glm::mat4(1.0), glm::radians(y_rotation * 60), glm::vec3(0, 1, 0));
@@ -517,11 +585,41 @@ int main(int, char **)
 
         glDepthFunc(GL_LESS);
         auto end = std::chrono::system_clock::now();
-        double elapsedTime = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() * 1e-4;
+        long millisecondsPassed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+        long fromPrevPassed = std::chrono::duration_cast<std::chrono::milliseconds>(end - prevTime).count();
+        prevTime = end;
+        double elapsedTime = (double) millisecondsPassed * 1e-4;
+        double elapsedFromPrev = (double) fromPrevPassed * 1e-4;
+        fps = (float) 1000 / (float) fromPrevPassed;
+        msperframe = fromPrevPassed;
 
         auto circleRadius = boatRadius;
+        auto metersPassed = 2 * M_PI * circleRadius * (elapsedFromPrev / (2 * M_PI));
+
+        perMeterParticles += metersPassed * particlesPerMeterIntensity;
+        perSecondParticles += (double) fromPrevPassed / 1000.0 * particlesPerSecondIntensity;
+
+        int addParticles = int(perSecondParticles) + int(perMeterParticles);
+        perMeterParticles -= int(perMeterParticles);
+        perSecondParticles -= int(perSecondParticles);
+
         auto startX = circleRadius * sin(elapsedTime);
         auto startZ = circleRadius * cos(elapsedTime);
+
+        for (int i = 0; i < addParticles; ++i) {
+            activeParticles.push_back(
+                    Particle{(float) startX, (float) startZ, millisecondsPassed, waveSpeed, waveLifetime}
+            );
+        }
+
+        for (int i = 0; i < activeParticles.size(); ++i) {
+            if (activeParticles[i].finishTime() + 1000 < millisecondsPassed) {
+                std::swap(activeParticles[i],activeParticles.back());
+                activeParticles.pop_back();
+                --i;
+            }
+        }
+
         auto boatModel =
                 glm::mat4x4(
                         1, 0, 0, 0,
@@ -537,81 +635,76 @@ int main(int, char **)
         auto cubemapView = glm::mat4(glm::mat3(objectView));
         auto cubemapVP = projection * cubemapView;
 
-//        std::cerr << "Projection\n";
-//        for (int i = 0; i < 4; ++i) {
-//            std::cerr << projectVP[i].x << ' ' << projectVP[i].y << ' ' << projectVP[i].z << ' ' << projectVP[i].w << '\n';
-//        }
 
-
-        glViewport(0, 0, display_w, display_h);
-        GLuint reflectionTexture;
-        { // draw to reflect buffer
-            glBindFramebuffer(GL_FRAMEBUFFER, reflectBuffer);
-
-            unsigned int rbo;
-            glGenRenderbuffers(1, &rbo);
-            glBindRenderbuffer(GL_RENDERBUFFER, rbo);
-            glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, display_w, display_h);
-            glBindRenderbuffer(GL_RENDERBUFFER, 0);
-            glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, rbo);
-
-            initReflectTexture(reflectionTexture, display_w, display_h);
-            glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+        { // draw waves height map
+            glViewport(0, 0, WAVES_WIDTH, WAVES_HEIGHT);
+            glBindFramebuffer(GL_FRAMEBUFFER, heightmapFBO);
+            glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
             glEnable(GL_DEPTH_TEST);
 
-            auto newCameraPos = cameraPos;
-            newCameraPos.y = -20.0 - (newCameraPos.y + 20.0);
+            std::sort(activeParticles.begin(), activeParticles.end(), [&](const Particle &a, const Particle &b) {
+                return a.intensity(millisecondsPassed) > b.intensity(millisecondsPassed);
+            });
 
-            auto newRotationX = glm::rotate(glm::mat4(1.0), glm::radians(-x_rotation * 60), glm::vec3(1, 0, 0));
-            auto newRotationY = glm::rotate(glm::mat4(1.0), glm::radians(y_rotation * 60), glm::vec3(0, 1, 0));
-            auto newRotated = newCurrentRotation * newRotationX * newRotationY;
-            newCurrentRotation = newRotated;
+            std::vector<uint> triangles;
+            std::vector<float> data;
 
-            auto newViewVector = glm::vec3(newRotated * glm::vec4(0, 0 , 1, 1));
-
-            auto newView = glm::lookAt<float>(
-                    newCameraPos,
-                    newCameraPos + newViewVector,
-                    glm::vec3( glm::vec4(0, -1 , 0, 1)));
-
-            auto waterPlane = glm::vec4(0, -1, 0, -20);
-            auto cameraSpaceWaterPlane = glm::inverse(glm::transpose(newView)) * waterPlane;
-            if (cameraSpaceWaterPlane.w > 0) {
-                cameraSpaceWaterPlane *= -1;
-            }
-            auto newProjection = projection;
-
-            auto cPrime = glm::transpose(glm::inverse(newProjection)) * cameraSpaceWaterPlane;
-            auto qPrime = glm::vec4(sign(cPrime.x), sign(cPrime.y), 1.0, 1.0);
-            auto Q = glm::inverse(newProjection) * qPrime;
-            newProjection = glm::transpose(newProjection);
-            newProjection[2] = -2.0f * Q.z / glm::dot(Q, cameraSpaceWaterPlane) * cameraSpaceWaterPlane +
-                    glm::vec4(0.0, 0.0, 1.0, 0.0);
-
-            newProjection = glm::transpose(newProjection);
-
-            if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-                std::cout << "ERROR::FRAMEBUFFER:: Framebuffer is not complete!" << std::endl;
+            for (const auto &particle : activeParticles) {
+                float dist = particle.distance(millisecondsPassed) + 2;
+                std::vector<std::vector<float>> points = {
+                        {particle.x - dist, particle.y - dist, 0},
+                        {particle.x - dist, particle.y + dist, 0},
+                        {particle.x + dist, particle.y + dist, 0},
+                        {particle.x - dist, particle.y - dist, 0},
+                        {particle.x + dist, particle.y + dist, 0},
+                        {particle.x + dist, particle.y - dist, 0}
+                };
+                for (auto point : points) {
+                    triangles.push_back(triangles.size());
+                    data.push_back(point[0] / borders);
+                    data.push_back(point[1] / borders);
+                    data.push_back(point[2] / borders);
+                    data.push_back(particle.x);
+                    data.push_back(particle.y);
+                    data.push_back(particle.distance(millisecondsPassed));
+                    data.push_back(particle.intensity(millisecondsPassed));
+                }
             }
 
-            boat.render(boatShader, boatModel, newProjection * newView * boatModel);
-            auto newCubemapView = glm::mat4(glm::mat3(newView));
-            auto newCubemapVP = newProjection * newCubemapView;
-
-            glDepthFunc(GL_LEQUAL);
-
-            cubemapShader.use();
-            cubemapShader.set_uniform("vp", glm::value_ptr(newCubemapVP));
-            glBindVertexArray(cubemapVAO);
-            glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_CUBE_MAP, cubemapTexture);
-            glDrawArrays(GL_TRIANGLES, 0, 36);
+            GLuint vao, vbo, ebo;
+            glGenVertexArrays(1, &vao);
+            glGenBuffers(1, &vbo);
+            glGenBuffers(1, &ebo);
+            glBindVertexArray(vao);
+            glBindBuffer(GL_ARRAY_BUFFER, vbo);
+            glBufferData(GL_ARRAY_BUFFER, data.size() * sizeof(float), &data[0], GL_STATIC_DRAW);
+            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+            glBufferData(GL_ELEMENT_ARRAY_BUFFER, triangles.size() * sizeof(unsigned int), &triangles[0], GL_STATIC_DRAW);
+            glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 7 * sizeof(float), (void *) nullptr);
+            glEnableVertexAttribArray(0);
+            glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 7 * sizeof(float), (void *) (3 * sizeof(float)));
+            glEnableVertexAttribArray(1);
+            glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, 7 * sizeof(float), (void *) (5 * sizeof(float)));
+            glEnableVertexAttribArray(2);
+            glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, 7 * sizeof(float), (void *) (6 * sizeof(float)));
+            glEnableVertexAttribArray(3);
+            glBindBuffer(GL_ARRAY_BUFFER, 0);
             glBindVertexArray(0);
-            glDepthFunc(GL_LESS);
 
-            glDeleteRenderbuffers(1, &rbo);
+            wavesShader.use();
+            wavesShader.set_uniform("eps", (float) pow(10, particleWidth));
+            wavesShader.set_uniform("border", borders);
+
+            glBindVertexArray(vao);
+            glDrawElements(GL_TRIANGLES, triangles.size(), GL_UNSIGNED_INT, nullptr);
+            glBindVertexArray(0);
+            glDeleteVertexArrays(1, &vao);
+            glDeleteBuffers(1, &vbo);
+            glDeleteBuffers(1, &ebo);
         }
+
+        glViewport(0, 0, display_w, display_h);
 
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glClearColor(0.0f, 1.0f, 0.0f, 1.00f);
@@ -624,19 +717,19 @@ int main(int, char **)
         waterShader.set_uniform("cameraPos", cameraPos.x, cameraPos.y, cameraPos.z);
         waterShader.set_uniform("model", glm::value_ptr(objectModel));
         waterShader.set_uniform("vp", glm::value_ptr(objectVP));
-        waterShader.set_uniform("reflection", 0);
-        waterShader.set_uniform("dudv", 1);
-        waterShader.set_uniform("time", (float) elapsedTime);
-        waterShader.set_uniform("waterSpeed", waterSpeed);
-        waterShader.set_uniform("tileSize", waterTileSize);
-        waterShader.set_uniform("dudvStrength", dudvStrength);
+        waterShader.set_uniform("cubeMap", 0);
+        waterShader.set_uniform("wavesTexture", 1);
+        waterShader.set_uniform("pomSteps", pomSteps);
+        waterShader.set_uniform("waveHeight", waveHeight);
+        waterShader.set_uniform("pomOn", pomOn);
+        waterShader.set_uniform("pomOpt", pomOpt);
 
         glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, reflectionTexture);
+        glBindTexture(GL_TEXTURE_CUBE_MAP, cubemapTexture);
         glActiveTexture(GL_TEXTURE1);
-        glBindTexture(GL_TEXTURE_2D, waterDuDv);
+        glBindTexture(GL_TEXTURE_2D, heightmapTexture);
         glBindVertexArray(waterVAO);
-        glDrawElements(GL_TRIANGLES, 12, GL_UNSIGNED_INT, nullptr);
+        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, nullptr);
         glBindVertexArray(0);
 
         glDepthFunc(GL_LEQUAL);
@@ -659,8 +752,6 @@ int main(int, char **)
 
         // Swap the backbuffer with the frontbuffer that is used for screen display
         glfwSwapBuffers(window);
-
-        glDeleteTextures(1, &reflectionTexture);
     }
 
     // Cleanup

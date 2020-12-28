@@ -39,7 +39,10 @@ add_executable( waves
                 assets/water-shader.vs
                 assets/object-preshader.vs
                 assets/object-preshader.fs
-                assets/water-preshader.vs)
+                assets/water-preshader.vs
+                assets/heightmap-shader.vs
+                assets/heightmap-shader.fs
+        )
 
 add_custom_command(TARGET waves
     POST_BUILD
@@ -52,6 +55,8 @@ add_custom_command(TARGET waves
     COMMAND ${CMAKE_COMMAND} -E copy ${PROJECT_SOURCE_DIR}/assets/water-shader.vs ${PROJECT_BINARY_DIR}
     COMMAND ${CMAKE_COMMAND} -E copy ${PROJECT_SOURCE_DIR}/assets/water-shader.fs ${PROJECT_BINARY_DIR}
     COMMAND ${CMAKE_COMMAND} -E copy ${PROJECT_SOURCE_DIR}/assets/water-preshader.vs ${PROJECT_BINARY_DIR}
+    COMMAND ${CMAKE_COMMAND} -E copy ${PROJECT_SOURCE_DIR}/assets/heightmap-shader.vs ${PROJECT_BINARY_DIR}
+    COMMAND ${CMAKE_COMMAND} -E copy ${PROJECT_SOURCE_DIR}/assets/heightmap-shader.fs ${PROJECT_BINARY_DIR}
 )
 
 target_compile_definitions(waves PUBLIC IMGUI_IMPL_OPENGL_LOADER_GLEW)
